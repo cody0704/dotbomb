@@ -10,7 +10,7 @@ Time:   0.96s
 Concurrency:     10
 ├─Total Query:   1000
 ├─Success:       1000
-├─Fail:  0
-└─Success Rate: 100.00%
+├─Fail:          0
+└─Success Rate:  100.00%
 Avg Delay:       8.653061ms
 ```
