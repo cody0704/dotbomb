@@ -1,0 +1,7 @@
+facebook.com
+twitter.com
+google.com
+youtube.com
+instagram.com
+linkedin.com
+wordpress.org
