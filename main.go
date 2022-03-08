@@ -17,19 +17,26 @@ var (
 	concurrency  int
 	totalRequest int
 	requestIP    string
+	requestPort  string
 	domainFile   string
 )
 
 func init() {
-	flag.IntVar(&concurrency, "c", 1, "concurrency number")
-	flag.IntVar(&totalRequest, "n", 1, "request number")
+	flag.IntVar(&concurrency, "c", 1, "number of concurrency")
+	flag.IntVar(&totalRequest, "n", 1, "number of request")
 	flag.StringVar(&requestIP, "r", "", "request ip address")
+	flag.StringVar(&requestPort, "p", "853", "request port")
 	flag.StringVar(&domainFile, "f", "", "domain list file")
 
 	flag.Parse()
 
 	if concurrency == 0 || totalRequest == 0 || requestIP == "" {
-		fmt.Printf("Example: dotbomb -c 1 -n 1 -r 8.8.8.8:853 \n")
+		fmt.Println("Example: ./dotbomb -c 10 -n 100 -r 8.8.8.8 -f domains.txt")
+		fmt.Println("Example: ./dotbomb -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt")
+		fmt.Println("-c [Concurrency] <Number>")
+		fmt.Println("-n [request] <Number>")
+		fmt.Println("-r <DNS Over TLS Server IP>")
+		fmt.Println("-p <Default Port 853>")
 
 		flag.Usage()
 		os.Exit(0)
@@ -41,6 +48,7 @@ func main() {
 	dotbomb.Concurrency = concurrency
 	dotbomb.TotalRequest = totalRequest
 	dotbomb.RequestIP = requestIP
+	dotbomb.RequestPort = requestPort
 
 	if domainFile != "" {
 		domainList, err := ioutil.ReadFile(domainFile)

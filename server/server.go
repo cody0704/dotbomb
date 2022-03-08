@@ -17,13 +17,14 @@ type DoTBomb struct {
 	Concurrency  int
 	TotalRequest int
 	RequestIP    string
+	RequestPort  string
 	DomainArray  []string
 }
 
 var stressChannel = make(chan string)
 
 func (b DoTBomb) Start() (chan string, error) {
-	if !verify.VerifyDoTServer(b.RequestIP) {
+	if !verify.VerifyDoTServer("8.8.8.8:853") {
 		return nil, errors.New("DoT Server can't connect")
 	}
 
@@ -33,7 +34,7 @@ func (b DoTBomb) Start() (chan string, error) {
 		go func(count int) {
 			// Build a query
 			q := new(dns.Msg)
-			dotClient := resolver.DotClient(b.RequestIP)
+			dotClient := resolver.DotClient(b.RequestIP + ":" + b.RequestPort)
 			for i := 0; i < b.TotalRequest; i++ {
 				t1 := time.Now() // get current time
 				q.SetQuestion(b.DomainArray[rand.Intn(domainCount)]+".", dns.TypeA)
