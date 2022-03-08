@@ -11,7 +11,7 @@ Example:
 
 -c      number of concurrency
 -n      number of query
--r      DNS Over TLS IP
+-r      DNS Over TLS Server IP
 -p      Port, default is 853
 -f      stress domain list
 ```
