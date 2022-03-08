@@ -31,10 +31,10 @@ func (b DoTBomb) Start() (chan string, error) {
 	var totalDelayTime time.Duration
 	var domainCount = len(b.DomainArray)
 	for count := 1; count <= b.Concurrency; count++ {
-		go func(count int) {
+		dotClient := resolver.DotClient(b.RequestIP + ":" + b.RequestPort)
+		go func(count int, dotClient *rdns.DoTClient) {
 			// Build a query
 			q := new(dns.Msg)
-			dotClient := resolver.DotClient(b.RequestIP + ":" + b.RequestPort)
 			for i := 0; i < b.TotalRequest; i++ {
 				t1 := time.Now() // get current time
 				q.SetQuestion(b.DomainArray[rand.Intn(domainCount)]+".", dns.TypeA)
@@ -48,7 +48,7 @@ func (b DoTBomb) Start() (chan string, error) {
 				totalDelayTime += elapsed
 				stressChannel <- fmt.Sprintf("%d delay", totalDelayTime)
 			}
-		}(count)
+		}(count, dotClient)
 	}
 
 	return stressChannel, nil
