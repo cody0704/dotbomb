@@ -19,7 +19,8 @@ Example:
 ## Source Code
 
 ```bash
-go run main.go -c 10 -n 100 -r 8.8.8.8:853 -f domains.txt
+go run main.go -c 10 -n 100 -r 8.8.8.8 -f domains.txt
+go run main.go -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt
 
 DoTBomb start stress...
 Time:   0.96s
@@ -37,7 +38,8 @@ Avg Delay:       8.653061ms
 ### Linux / MacOS
 
 ```bash
-./dotbomb -c 10 -n 100 -r 8.8.8.8:853 -f domains.txt
+./dotbomb -c 10 -n 100 -r 8.8.8.8 -f domains.txt
+./dotbomb -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt
 
 DoTBomb start stress...
 Time:   0.96s
