@@ -20,18 +20,18 @@ Example:
 ## Source Code
 
 ```bash
-go run main.go -c 10 -n 100 -r 8.8.8.8:853 -f domains.txt
+go run main.go -c 3 -n 2 -r 8.8.8.8:853 -f domains.txt
+2022/03/14 13:57:08 DoTBomb start stress...
 
-DoTBomb start stress...
-Run Time:        0.232600s
-Concurrency:     2
+Run Time:        0.093726s
+Concurrency:     3
 |-Status:        Finish
-|-Count:         4
+|-Count:         6
 |-Success
-| |-Send:        4
-| |-Recv:        4
-|   |-LastTime:  0.145471s
-|   `-AvgTIme:   0.036368s
+| |-Send:        6
+| |-Recv:        6
+|   |-LastTime:  0.056690s
+|   `-AvgTIme:   0.009448s
 `-Error:
   |-Recv:        0
   `-CloseSock:   0
@@ -43,18 +43,18 @@ Concurrency:     2
 ### Linux / MacOS
 
 ```bash
-./dotbomb -c 10 -n 100 -r 8.8.8.8:853 -f domains.txt
+./dotbomb -c 3 -n 2 -r 8.8.8.8:853 -f domains.txt
+2022/03/14 13:56:45 DoTBomb start stress...
 
-DoTBomb start stress...
-Run Time:        0.232600s
-Concurrency:     2
+Run Time:        0.082599s
+Concurrency:     3
 |-Status:        Finish
-|-Count:         4
+|-Count:         6
 |-Success
-| |-Send:        4
-| |-Recv:        4
-|   |-LastTime:  0.145471s
-|   `-AvgTIme:   0.036368s
+| |-Send:        6
+| |-Recv:        6
+|   |-LastTime:  0.047309s
+|   `-AvgTIme:   0.007885s
 `-Error:
   |-Recv:        0
   `-CloseSock:   0
