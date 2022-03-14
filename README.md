@@ -20,7 +20,7 @@ Example:
 ## Source Code
 
 ```bash
-go run main.go -c 3 -n 2 -r 8.8.8.8:853 -f domains.txt
+go run main.go -c 3 -n 2 -r 8.8.8.8 -f domains.txt
 2022/03/14 13:57:08 DoTBomb start stress...
 
 Run Time:        0.093726s
@@ -43,7 +43,7 @@ Concurrency:     3
 ### Linux / MacOS
 
 ```bash
-./dotbomb -c 3 -n 2 -r 8.8.8.8:853 -f domains.txt
+./dotbomb -c 3 -n 2 -r 8.8.8.8 -f domains.txt
 2022/03/14 13:56:45 DoTBomb start stress...
 
 Run Time:        0.082599s
