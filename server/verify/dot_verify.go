@@ -13,14 +13,16 @@ func VerifyDoTServer(dotServer string) bool {
 	}
 
 	// Resolve the query
-	r, _ := rdns.NewDoTClient("test-dot", dotServer, rdns.DoTClientOptions{TLSConfig: &config})
+	r, err := rdns.NewDoTClient("test-dot", dotServer, rdns.DoTClientOptions{TLSConfig: &config})
+	if err != nil {
+		return false
+	}
 
 	// Build a query
 	q := new(dns.Msg)
 	q.SetQuestion("www.google.com.", dns.TypeA)
 
-	_, err := r.Resolve(q, rdns.ClientInfo{})
-	if err != nil {
+	if _, err = r.Resolve(q, rdns.ClientInfo{}); err != nil {
 		return false
 	}
 
