@@ -5,10 +5,7 @@ This is a DNS over TLS stress test tool
 ## Command usage description
 
 ```
-Example:
-./dotbomb -c 10 -n 100 -r 8.8.8.8 -f domains.txt
-./dotbomb -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt
-
+-v      show version
 -c      number of concurrency
 -t      last Recv Packet Timeout
 -n      number of query
@@ -20,20 +17,22 @@ Example:
 ## Source Code
 
 ```bash
-go run main.go -c 3 -n 2 -r 8.8.8.8 -f domains.txt
-2022/03/14 13:57:08 DoTBomb start stress...
+go run main.go -c 5 -n 5 -r 1.1.1.1 -f ./domains.txt
+2022/03/16 13:19:56 DoTBomb start stress...
+2022/03/16 13:19:56 DNS Over TLS Server: 1.1.1.1:853
 
-Run Time:        0.093726s
-Concurrency:     3
+Run Time:        0.176592s
+Concurrency:     5
 |-Status:        Finish
-|-Count:         6
+|-Count:         40
 |-Success
-| |-Send:        6
-| |-Recv:        6
-|   |-LastTime:  0.056690s
-|   `-AvgTIme:   0.009448s
+| |-Send:        40
+| |-Recv:        40
+|   |-Answer:    40
+|   |-NoAnswer:  0
+|   |-LastTime:  0.146958s
+|   `-AvgTime:   0.003674s
 `-Error:
-  |-Recv:        0
   `-CloseSock:   0
 ```
 
@@ -43,19 +42,21 @@ Concurrency:     3
 ### Linux / MacOS
 
 ```bash
-./dotbomb -c 3 -n 2 -r 8.8.8.8 -f domains.txt
-2022/03/14 13:56:45 DoTBomb start stress...
+./dotbomb_v1.1.1_darwin-amd64 -c 1 -n 5 -r 8.8.8.8 -f domains.txt
+2022/03/16 13:20:57 DoTBomb start stress...
+2022/03/16 13:20:57 DNS Over TLS Server: 8.8.8.8:853
 
-Run Time:        0.082599s
-Concurrency:     3
+Run Time:        0.113693s
+Concurrency:     1
 |-Status:        Finish
-|-Count:         6
+|-Count:         5
 |-Success
-| |-Send:        6
-| |-Recv:        6
-|   |-LastTime:  0.047309s
-|   `-AvgTIme:   0.007885s
+| |-Send:        5
+| |-Recv:        5
+|   |-Answer:    5
+|   |-NoAnswer:  0
+|   |-LastTime:  0.079025s
+|   `-AvgTime:   0.015805s
 `-Error:
-  |-Recv:        0
   `-CloseSock:   0
 ```
