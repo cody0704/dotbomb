@@ -1,13 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -66,15 +66,28 @@ func main() {
 		LastTimeout:  time.Second * time.Duration(timeout),
 	}
 
-	if domainFile != "" {
-		domainList, err := ioutil.ReadFile(domainFile)
-		if err != nil {
-			fmt.Println("Domain list file is not supported.")
-			return
-		}
-
-		dotbomb.DomainArray = strings.Split(string(domainList), "\r\n")
+	file, err := os.Open(domainFile)
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		domain := scanner.Text()
+		if domain == "" {
+			continue
+		}
+		dotbomb.DomainArray = append(dotbomb.DomainArray, domain)
+	}
+
+	if len(dotbomb.DomainArray) == 0 {
+		log.Fatal(domainFile, " does not have any domains")
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
+	file.Close()
 
 	log.Println("DoTBomb start stress...")
 	t1 := time.Now() // get current time
@@ -104,11 +117,18 @@ func report(t1 time.Time, report server.StressReport, status int) {
 	fmt.Println("|-Count:\t", concurrency*totalRequest)
 	fmt.Println("|-Success")
 	fmt.Println("| |-Send:\t", report.SendCount)
-	fmt.Println("| |-Recv:\t", report.RecvCount)
+	totalResponse := report.RecvAnsCount + report.RecvNoAnsCount
+	fmt.Println("| |-Recv:\t", totalResponse)
+	fmt.Println("|   |-Answer:\t", report.RecvAnsCount)
+	fmt.Println("|   |-NoAnswer:\t", report.RecvNoAnsCount)
 	fmt.Printf("|   |-LastTime:\t %.6fs\n", report.LastTime.Seconds())
-	fmt.Printf("|   `-AvgTIme:\t %.6fs\n", report.LastTime.Seconds()/float64(report.RecvCount))
+	avgTime := report.LastTime.Seconds() / float64(totalResponse)
+	if math.IsInf(avgTime, 0) || math.IsNaN(avgTime) {
+		fmt.Println("|   `-AvgTime:\t 0.000000s")
+	} else {
+		fmt.Printf("|   `-AvgTime:\t %.6fs\n", report.LastTime.Seconds()/float64(totalResponse))
+	}
 	// fmt.Printf("  └─Success Rate:\t %.2f %%", float32(successNumber)/float32(successNumber+errorNumber)*100)
 	fmt.Println("`-Error:\t")
-	fmt.Println("  |-Recv:\t", report.RecvErrCount)
 	fmt.Println("  `-CloseSock:\t", report.StopSockCount)
 }

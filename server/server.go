@@ -27,11 +27,11 @@ type DoTBomb struct {
 }
 
 type StressReport struct {
-	SendCount     uint64
-	RecvCount     uint64
-	RecvErrCount  uint64
-	StopSockCount uint64
-	LastTime      time.Duration
+	SendCount      uint64
+	RecvAnsCount   uint64
+	RecvNoAnsCount uint64
+	StopSockCount  uint64
+	LastTime       time.Duration
 }
 
 var Result StressReport
@@ -41,10 +41,11 @@ var wg sync.WaitGroup
 func (b DoTBomb) Start() {
 	server := b.RequestIP + ":" + b.RequestPort
 	if !verify.VerifyDoTServer(server) {
-		log.Println("Cannot connect to DNS Over TLS Server:", b.RequestIP+":"+b.RequestPort)
+		log.Println("Cannot connect to DNS Over TLS Server:", server)
 		os.Exit(0)
 		return
 	}
+	log.Println("DNS Over TLS Server:", server)
 
 	var timeout *time.Timer
 	var lastTimer <-chan time.Time
@@ -83,24 +84,31 @@ func (b DoTBomb) Start() {
 
 			for i := 0; i < b.TotalRequest; i++ {
 				randNo := rand.Intn(domainCount)
-				q.SetQuestion(b.DomainArray[randNo]+".", dns.TypeA)
+				domain := b.DomainArray[randNo] + "."
+				q.SetQuestion(domain, dns.TypeA)
 				atomic.AddUint64(&Result.SendCount, 1)
 				resp, err := dotClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
-					Result.LastTime = time.Since(t1)
+					log.Println("Problem with dns query:", err, domain)
+					log.Println("goroutine close:", count)
 					atomic.AddUint64(&Result.StopSockCount, 1)
-					wg.Done()
 					break
 				}
 				Result.LastTime = time.Since(t1)
 				timeout.Reset(b.LastTimeout)
 
-				switch len(strings.Split(resp.Answer[0].String(), "\t")) {
-				case 5:
-					atomic.AddUint64(&Result.RecvCount, 1)
-				default:
-					atomic.AddUint64(&Result.RecvErrCount, 1)
+				answers := resp.Answer
+				if len(answers) > 0 {
+					switch len(strings.Split(answers[0].String(), "\t")) {
+					case 5:
+						atomic.AddUint64(&Result.RecvAnsCount, 1)
+					default:
+						atomic.AddUint64(&Result.RecvNoAnsCount, 1)
+					}
+				} else {
+					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
 				}
+
 			}
 			wg.Done()
 		}(count)
