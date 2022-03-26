@@ -2,8 +2,8 @@ package server
 
 import (
 	"crypto/tls"
+	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -30,6 +30,8 @@ type StressReport struct {
 	SendCount      uint64
 	RecvAnsCount   uint64
 	RecvNoAnsCount uint64
+	TimeoutCount   uint64
+	OtherCount     uint64
 	StopSockCount  uint64
 	LastTime       time.Duration
 }
@@ -47,21 +49,7 @@ func (b DoTBomb) Start() {
 	}
 	log.Println("DNS Over TLS Server:", server)
 
-	var timeout *time.Timer
-	var lastTimer <-chan time.Time
-	if b.LastTimeout > 0 {
-		timeout = time.NewTimer(b.LastTimeout)
-		defer timeout.Stop()
-		lastTimer = timeout.C
-	}
-
 	t1 := time.Now()
-	go func() {
-		for range lastTimer {
-			StatusChan <- 1
-			Result.LastTime = time.Since(t1)
-		}
-	}()
 
 	config := tls.Config{
 		InsecureSkipVerify: true,
@@ -69,8 +57,9 @@ func (b DoTBomb) Start() {
 
 	wg.Add(b.Concurrency)
 	var domainCount = len(b.DomainArray)
+	finish := b.TotalRequest * b.Concurrency
 	for count := 1; count <= b.Concurrency; count++ {
-		go func(count int) {
+		go func(count, finish int) {
 			// Build a query
 			q := new(dns.Msg)
 
@@ -83,19 +72,21 @@ func (b DoTBomb) Start() {
 			}
 
 			for i := 0; i < b.TotalRequest; i++ {
-				randNo := rand.Intn(domainCount)
-				domain := b.DomainArray[randNo] + "."
+				domain := b.DomainArray[i%domainCount] + "."
+
 				q.SetQuestion(domain, dns.TypeA)
 				atomic.AddUint64(&Result.SendCount, 1)
+				fmt.Printf("Progress:\t%d/%d\r", Result.SendCount, finish)
 				resp, err := dotClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
-					log.Println("Problem with dns query:", err, domain)
-					log.Println("goroutine close:", count)
-					atomic.AddUint64(&Result.StopSockCount, 1)
-					break
+					if strings.Contains(err.Error(), "timed out") {
+						atomic.AddUint64(&Result.TimeoutCount, 1)
+					} else {
+						atomic.AddUint64(&Result.OtherCount, 1)
+					}
+					continue
 				}
 				Result.LastTime = time.Since(t1)
-				timeout.Reset(b.LastTimeout)
 
 				answers := resp.Answer
 				if len(answers) > 0 {
@@ -111,7 +102,7 @@ func (b DoTBomb) Start() {
 
 			}
 			wg.Done()
-		}(count)
+		}(count, finish)
 	}
 	wg.Wait()
 	StatusChan <- 0

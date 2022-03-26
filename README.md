@@ -17,23 +17,21 @@ This is a DNS over TLS stress test tool
 ## Source Code
 
 ```bash
-go run main.go -c 5 -n 5 -r 1.1.1.1 -f ./domains.txt
-2022/03/16 13:19:56 DoTBomb start stress...
-2022/03/16 13:19:56 DNS Over TLS Server: 1.1.1.1:853
+go run main.go -c 20 -n 2000 -r 8.8.8.8 -f ./domains.txt
+2022/03/26 14:40:44 DoTBomb start stress...
+2022/03/26 14:40:45 DNS Over TLS Server: 8.8.8.8:853
+Progress:       4000/4000
 
-Run Time:        0.176592s
-Concurrency:     5
-|-Status:        Finish
-|-Count:         40
-|-Success
-| |-Send:        40
-| |-Recv:        40
-|   |-Answer:    40
-|   |-NoAnswer:  0
-|   |-LastTime:  0.146958s
-|   `-AvgTime:   0.003674s
-`-Error:
-  `-CloseSock:   0
+Status:          Finish
+Finish Time:     3.472923s
+Avg Latency:     0.000869s
+==========================================
+Send:            4000
+Recv:            4000
+  Answer:        3917
+  NoAnswer:      80
+  Timeout:       3
+  Other:         0
 ```
 
 
@@ -42,21 +40,19 @@ Concurrency:     5
 ### Linux / MacOS
 
 ```bash
-./dotbomb_v1.1.1_darwin-amd64 -c 1 -n 5 -r 8.8.8.8 -f domains.txt
-2022/03/16 13:20:57 DoTBomb start stress...
-2022/03/16 13:20:57 DNS Over TLS Server: 8.8.8.8:853
+./dotbomb_v1.1.1_darwin-amd64 -c 20 -n 100 -r 8.8.8.8 -f domains.txt
+2022/03/26 14:39:49 DoTBomb start stress...
+2022/03/26 14:39:49 DNS Over TLS Server: 8.8.8.8:853
+Progress:       2000/2000
 
-Run Time:        0.113693s
-Concurrency:     1
-|-Status:        Finish
-|-Count:         5
-|-Success
-| |-Send:        5
-| |-Recv:        5
-|   |-Answer:    5
-|   |-NoAnswer:  0
-|   |-LastTime:  0.079025s
-|   `-AvgTime:   0.015805s
-`-Error:
-  `-CloseSock:   0
+Status:          Finish
+Finish Time:     1.084065s
+Avg Latency:     0.000542s
+==========================================
+Send:            2000
+Recv:            2000
+  Answer:        1980
+  NoAnswer:      20
+  Timeout:       0
+  Other:         0
 ```

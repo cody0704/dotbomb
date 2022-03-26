@@ -27,7 +27,7 @@ var (
 
 func init() {
 	flag.BoolVar(&version, "v", false, "number of concurrency")
-	flag.IntVar(&timeout, "t", 3, "Last Recv Packet Timeout")
+	flag.IntVar(&timeout, "t", 3, "RecvTimeout")
 	flag.IntVar(&concurrency, "c", 1, "number of concurrency")
 	flag.IntVar(&totalRequest, "n", 1, "number of request")
 	flag.StringVar(&requestIP, "r", "", "request ip address")
@@ -90,45 +90,38 @@ func main() {
 	file.Close()
 
 	log.Println("DoTBomb start stress...")
-	t1 := time.Now() // get current time
 
 	go dotbomb.Start()
 
 	select {
 	case <-sigChan:
-		report(t1, server.Result, 2)
+		report(server.Result, 1)
 	case status := <-server.StatusChan:
-		report(t1, server.Result, status)
+		report(server.Result, status)
 	}
 }
 
-func report(t1 time.Time, report server.StressReport, status int) {
-	elapsed := time.Since(t1)
-	fmt.Printf("\nRun Time:\t %.6fs\n", elapsed.Seconds())
-	fmt.Println("Concurrency:\t", concurrency)
+func report(report server.StressReport, status int) {
 	switch status {
 	case 0:
-		fmt.Println("|-Status:\t", "Finish")
+		fmt.Println("\n\nStatus:\t\t", "Finish")
 	case 1:
-		fmt.Println("|-Status:\t", "Timeout")
-	case 2:
-		fmt.Println("|-Status:\t", "Cancle")
+		fmt.Println("\nStatus:\t\t", "Cancle")
 	}
-	fmt.Println("|-Count:\t", concurrency*totalRequest)
-	fmt.Println("|-Success")
-	fmt.Println("| |-Send:\t", report.SendCount)
+	fmt.Printf("Finish Time:\t %.6fs\n", report.LastTime.Seconds())
 	totalResponse := report.RecvAnsCount + report.RecvNoAnsCount
-	fmt.Println("| |-Recv:\t", totalResponse)
-	fmt.Println("|   |-Answer:\t", report.RecvAnsCount)
-	fmt.Println("|   |-NoAnswer:\t", report.RecvNoAnsCount)
-	fmt.Printf("|   |-LastTime:\t %.6fs\n", report.LastTime.Seconds())
-	avgTime := report.LastTime.Seconds() / float64(totalResponse)
-	if math.IsInf(avgTime, 0) || math.IsNaN(avgTime) {
-		fmt.Println("|   `-AvgTime:\t 0.000000s")
+	avgLantency := report.LastTime.Seconds() / float64(totalResponse)
+	if math.IsInf(avgLantency, 0) || math.IsNaN(avgLantency) {
+		fmt.Println("Avg Latency:\t 0.000000s")
 	} else {
-		fmt.Printf("|   `-AvgTime:\t %.6fs\n", report.LastTime.Seconds()/float64(totalResponse))
+		fmt.Printf("Avg Latency:\t %.6fs\n", report.LastTime.Seconds()/float64(totalResponse))
 	}
-	// fmt.Printf("  └─Success Rate:\t %.2f %%", float32(successNumber)/float32(successNumber+errorNumber)*100)
-	fmt.Println("`-Error:\t")
-	fmt.Println("  `-CloseSock:\t", report.StopSockCount)
+	fmt.Println("==========================================")
+	fmt.Println("Send:\t\t", report.SendCount)
+
+	fmt.Println("Recv:\t\t", report.RecvAnsCount+report.RecvNoAnsCount+report.TimeoutCount+report.OtherCount)
+	fmt.Println("  Answer:\t", report.RecvAnsCount)
+	fmt.Println("  NoAnswer:\t", report.RecvNoAnsCount)
+	fmt.Println("  Timeout:\t", report.TimeoutCount)
+	fmt.Println("  Other:\t", report.OtherCount)
 }
