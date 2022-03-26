@@ -7,13 +7,13 @@ import (
 	"github.com/miekg/dns"
 )
 
-func VerifyDoTServer(dotServer string) bool {
+func DoHServer(dohServer string) bool {
 	config := tls.Config{
 		InsecureSkipVerify: true,
 	}
 
 	// Resolve the query
-	r, err := rdns.NewDoTClient("test-dot", dotServer, rdns.DoTClientOptions{TLSConfig: &config})
+	r, err := rdns.NewDoHClient("test-doh", dohServer, rdns.DoHClientOptions{TLSConfig: &config})
 	if err != nil {
 		return false
 	}

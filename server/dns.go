@@ -1,13 +1,11 @@
 package server
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,43 +15,16 @@ import (
 	"github.com/miekg/dns"
 )
 
-type DoTBomb struct {
-	Concurrency  int
-	TotalRequest int
-	RequestIP    string
-	RequestPort  string
-	DomainArray  []string
-	LastTimeout  time.Duration
-}
-
-type StressReport struct {
-	SendCount      uint64
-	RecvAnsCount   uint64
-	RecvNoAnsCount uint64
-	TimeoutCount   uint64
-	OtherCount     uint64
-	StopSockCount  uint64
-	LastTime       time.Duration
-}
-
-var Result StressReport
-var StatusChan = make(chan int, 1)
-var wg sync.WaitGroup
-
-func (b DoTBomb) Start() {
+func (b Bomb) DNS() {
 	server := b.RequestIP + ":" + b.RequestPort
-	if !verify.VerifyDoTServer(server) {
-		log.Println("Cannot connect to DNS Over TLS Server:", server)
+	if !verify.DNSServer(server) {
+		log.Println("Cannot connect to DNS Server:", server)
 		os.Exit(0)
 		return
 	}
-	log.Println("DNS Over TLS Server:", server)
+	log.Println("DNS Server:", server)
 
 	t1 := time.Now()
-
-	config := tls.Config{
-		InsecureSkipVerify: true,
-	}
 
 	wg.Add(b.Concurrency)
 	var domainCount = len(b.DomainArray)
@@ -64,7 +35,7 @@ func (b DoTBomb) Start() {
 			q := new(dns.Msg)
 
 			// Resolve the query
-			dotClient, err := rdns.NewDoTClient("stress-dns-"+strconv.Itoa(count), server, rdns.DoTClientOptions{TLSConfig: &config})
+			dnsClient, err := rdns.NewDNSClient("stress-dns-"+strconv.Itoa(count), server, "udp", rdns.DNSClientOptions{})
 			if err != nil {
 				log.Println(err)
 				wg.Done()
@@ -77,7 +48,7 @@ func (b DoTBomb) Start() {
 				q.SetQuestion(domain, dns.TypeA)
 				atomic.AddUint64(&Result.SendCount, 1)
 				fmt.Printf("Progress:\t%d/%d\r", Result.SendCount, finish)
-				resp, err := dotClient.Resolve(q, rdns.ClientInfo{})
+				resp, err := dnsClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
 					if strings.Contains(err.Error(), "timed out") {
 						atomic.AddUint64(&Result.TimeoutCount, 1)
