@@ -1,35 +1,19 @@
-package server
+package stress
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/cody0704/dotbomb/server/verify"
-
 	rdns "github.com/folbricht/routedns"
 	"github.com/miekg/dns"
 )
 
-func (b Bomb) DoH() {
-	server := "https://" + b.RequestIP + ":" + b.RequestPort + "/dns-query"
-	if !verify.DoHServer(server) {
-		log.Println("Cannot connect to DNS Over HTTPS Server:", server)
-		os.Exit(0)
-		return
-	}
-	log.Println("DNS Over HTTPS Server:", server)
-
+func (b Bomb) DNS() {
 	t1 := time.Now()
-
-	config := tls.Config{
-		InsecureSkipVerify: true,
-	}
 
 	wg.Add(b.Concurrency)
 	var domainCount = len(b.DomainArray)
@@ -40,7 +24,9 @@ func (b Bomb) DoH() {
 			q := new(dns.Msg)
 
 			// Resolve the query
-			dohClient, err := rdns.NewDoHClient("stress-doh-"+strconv.Itoa(count), server, rdns.DoHClientOptions{TLSConfig: &config})
+			dnsClient, err := rdns.NewDNSClient("stress-dns-"+strconv.Itoa(count), b.Server, "udp", rdns.DNSClientOptions{
+				Timeout: b.Timeout,
+			})
 			if err != nil {
 				log.Println(err)
 				wg.Done()
@@ -52,8 +38,8 @@ func (b Bomb) DoH() {
 
 				q.SetQuestion(domain, dns.TypeA)
 				atomic.AddUint64(&Result.SendCount, 1)
-				fmt.Printf("Progress:\t%d/%d\r", Result.SendCount, finish)
-				resp, err := dohClient.Resolve(q, rdns.ClientInfo{})
+				fmt.Printf("Progress:\t %d/%d\r", Result.SendCount, finish)
+				resp, err := dnsClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
 					if strings.Contains(err.Error(), "timed out") {
 						atomic.AddUint64(&Result.TimeoutCount, 1)
@@ -76,10 +62,31 @@ func (b Bomb) DoH() {
 					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
 				}
 
+				time.Sleep(b.Latency)
 			}
 			wg.Done()
 		}(count, finish)
 	}
 	wg.Wait()
 	StatusChan <- 0
+}
+
+func (b Bomb) VerifyDNS() bool {
+	// Resolve the query
+	r, err := rdns.NewDNSClient("test-dns", b.Server, "udp", rdns.DNSClientOptions{
+		Timeout: b.Timeout,
+	})
+	if err != nil {
+		return false
+	}
+
+	// Build a query
+	q := new(dns.Msg)
+	q.SetQuestion("www.google.com.", dns.TypeA)
+
+	if _, err = r.Resolve(q, rdns.ClientInfo{}); err != nil {
+		return false
+	}
+
+	return true
 }

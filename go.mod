@@ -5,9 +5,10 @@ go 1.17
 require (
 	github.com/folbricht/routedns v0.1.0
 	github.com/miekg/dns v1.1.47
+	github.com/pion/udp v0.1.1
 )
 
-replace github.com/folbricht/routedns v0.1.0 => github.com/cody0704/routedns v0.2.0
+replace github.com/folbricht/routedns v0.1.0 => github.com/cody0704/routedns v0.2.1
 
 require (
 	github.com/cheekybits/genny v1.0.0 // indirect
@@ -25,7 +26,6 @@ require (
 	github.com/pion/dtls/v2 v2.1.0 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/transport v0.13.0 // indirect
-	github.com/pion/udp v0.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect

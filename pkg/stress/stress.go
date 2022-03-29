@@ -1,4 +1,4 @@
-package server
+package stress
 
 import (
 	"sync"
@@ -8,10 +8,11 @@ import (
 type Bomb struct {
 	Concurrency  int
 	TotalRequest int
-	RequestIP    string
-	RequestPort  string
+	Server       string
+	Method       string
 	DomainArray  []string
-	LastTimeout  time.Duration
+	Latency      time.Duration
+	Timeout      time.Duration
 }
 
 type StressReport struct {

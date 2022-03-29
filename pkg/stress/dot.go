@@ -1,30 +1,24 @@
-package server
+package stress
 
 import (
+	"crypto/tls"
 	"fmt"
 	"log"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/cody0704/dotbomb/server/verify"
-
 	rdns "github.com/folbricht/routedns"
 	"github.com/miekg/dns"
 )
 
-func (b Bomb) DNS() {
-	server := b.RequestIP + ":" + b.RequestPort
-	if !verify.DNSServer(server) {
-		log.Println("Cannot connect to DNS Server:", server)
-		os.Exit(0)
-		return
-	}
-	log.Println("DNS Server:", server)
-
+func (b Bomb) DoT() {
 	t1 := time.Now()
+
+	config := tls.Config{
+		InsecureSkipVerify: true,
+	}
 
 	wg.Add(b.Concurrency)
 	var domainCount = len(b.DomainArray)
@@ -35,7 +29,10 @@ func (b Bomb) DNS() {
 			q := new(dns.Msg)
 
 			// Resolve the query
-			dnsClient, err := rdns.NewDNSClient("stress-dns-"+strconv.Itoa(count), server, "udp", rdns.DNSClientOptions{})
+			dotClient, err := rdns.NewDoTClient("stress-dot-"+strconv.Itoa(count), b.Server, rdns.DoTClientOptions{
+				TLSConfig: &config,
+				Timeout:   b.Timeout,
+			})
 			if err != nil {
 				log.Println(err)
 				wg.Done()
@@ -47,8 +44,8 @@ func (b Bomb) DNS() {
 
 				q.SetQuestion(domain, dns.TypeA)
 				atomic.AddUint64(&Result.SendCount, 1)
-				fmt.Printf("Progress:\t%d/%d\r", Result.SendCount, finish)
-				resp, err := dnsClient.Resolve(q, rdns.ClientInfo{})
+				fmt.Printf("Progress:\t %d/%d\r", Result.SendCount, finish)
+				resp, err := dotClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
 					if strings.Contains(err.Error(), "timed out") {
 						atomic.AddUint64(&Result.TimeoutCount, 1)
@@ -71,10 +68,36 @@ func (b Bomb) DNS() {
 					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
 				}
 
+				time.Sleep(b.Latency)
 			}
 			wg.Done()
 		}(count, finish)
 	}
 	wg.Wait()
 	StatusChan <- 0
+}
+
+func (b Bomb) VerifyDoT() bool {
+	config := tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	// Resolve the query
+	r, err := rdns.NewDoTClient("test-dot", b.Server, rdns.DoTClientOptions{
+		Timeout:   b.Timeout,
+		TLSConfig: &config,
+	})
+	if err != nil {
+		return false
+	}
+
+	// Build a query
+	q := new(dns.Msg)
+	q.SetQuestion("www.google.com.", dns.TypeA)
+
+	if _, err = r.Resolve(q, rdns.ClientInfo{}); err != nil {
+		return false
+	}
+
+	return true
 }
