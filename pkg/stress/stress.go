@@ -12,7 +12,9 @@ type Bomb struct {
 	Method       string
 	DomainArray  []string
 	Latency      time.Duration
-	Timeout      time.Duration
+	LastTimeout  time.Duration
+
+	Interval int
 }
 
 type StressReport struct {
@@ -22,7 +24,9 @@ type StressReport struct {
 	TimeoutCount   uint64
 	OtherCount     uint64
 	StopSockCount  uint64
-	LastTime       time.Duration
+
+	RecvLastTime time.Duration
+	SendLastTime time.Duration
 }
 
 var Result StressReport

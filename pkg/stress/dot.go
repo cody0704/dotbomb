@@ -30,8 +30,8 @@ func (b Bomb) DoT() {
 
 			// Resolve the query
 			dotClient, err := rdns.NewDoTClient("stress-dot-"+strconv.Itoa(count), b.Server, rdns.DoTClientOptions{
-				TLSConfig: &config,
-				Timeout:   b.Timeout,
+				TLSConfig:    &config,
+				QueryTimeout: b.LastTimeout,
 			})
 			if err != nil {
 				log.Println(err)
@@ -40,7 +40,7 @@ func (b Bomb) DoT() {
 			}
 
 			for i := 0; i < b.TotalRequest; i++ {
-				domain := b.DomainArray[i%domainCount] + "."
+				domain := b.DomainArray[i%domainCount]
 
 				q.SetQuestion(domain, dns.TypeA)
 				atomic.AddUint64(&Result.SendCount, 1)
@@ -54,7 +54,7 @@ func (b Bomb) DoT() {
 					}
 					continue
 				}
-				Result.LastTime = time.Since(t1)
+				Result.SendLastTime = time.Since(t1)
 
 				answers := resp.Answer
 				if len(answers) > 0 {
@@ -84,8 +84,8 @@ func (b Bomb) VerifyDoT() bool {
 
 	// Resolve the query
 	r, err := rdns.NewDoTClient("test-dot", b.Server, rdns.DoTClientOptions{
-		Timeout:   b.Timeout,
-		TLSConfig: &config,
+		QueryTimeout: b.LastTimeout,
+		TLSConfig:    &config,
 	})
 	if err != nil {
 		return false

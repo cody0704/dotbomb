@@ -1,8 +1,9 @@
 package stress
 
 import (
-	"fmt"
+	"context"
 	"log"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -10,14 +11,21 @@ import (
 
 	rdns "github.com/folbricht/routedns"
 	"github.com/miekg/dns"
+	"golang.org/x/time/rate"
 )
 
-func (b Bomb) DNS() {
-	t1 := time.Now()
+func (b *Bomb) DNS() {
+	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
+	defer timeout.Stop()
 
-	wg.Add(b.Concurrency)
+	// TPS 限制
+	var ctx = context.Background()
+	limiter := rate.NewLimiter(rate.Limit(b.Interval), 1)
+
 	var domainCount = len(b.DomainArray)
 	finish := b.TotalRequest * b.Concurrency
+
+	t1 := time.Now() // get current time
 	for count := 1; count <= b.Concurrency; count++ {
 		go func(count, finish int) {
 			// Build a query
@@ -25,20 +33,24 @@ func (b Bomb) DNS() {
 
 			// Resolve the query
 			dnsClient, err := rdns.NewDNSClient("stress-dns-"+strconv.Itoa(count), b.Server, "udp", rdns.DNSClientOptions{
-				Timeout: b.Timeout,
+				QueryTimeout: b.LastTimeout,
 			})
 			if err != nil {
-				log.Println(err)
-				wg.Done()
+				pc, file, line, ok := runtime.Caller(1)
+				if ok {
+					fn := runtime.FuncForPC(pc)
+					log.Printf("[ERROR] %s:%d [%s] %v", file, line, fn.Name(), err)
+				}
 				return
 			}
 
-			for i := 0; i < b.TotalRequest; i++ {
-				domain := b.DomainArray[i%domainCount] + "."
+			for i := range b.TotalRequest {
+				domain := b.DomainArray[i%domainCount]
 
 				q.SetQuestion(domain, dns.TypeA)
+				Result.SendLastTime = time.Since(t1)
 				atomic.AddUint64(&Result.SendCount, 1)
-				fmt.Printf("Progress:\t %d/%d\r", Result.SendCount, finish)
+
 				resp, err := dnsClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
 					if strings.Contains(err.Error(), "timed out") {
@@ -48,7 +60,7 @@ func (b Bomb) DNS() {
 					}
 					continue
 				}
-				Result.LastTime = time.Since(t1)
+				Result.RecvLastTime = time.Since(t1)
 
 				answers := resp.Answer
 				if len(answers) > 0 {
@@ -62,31 +74,43 @@ func (b Bomb) DNS() {
 					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
 				}
 
-				time.Sleep(b.Latency)
+				limiter.Wait(ctx)
 			}
-			wg.Done()
 		}(count, finish)
 	}
-	wg.Wait()
-	StatusChan <- 0
+
+	for {
+		select {
+		case <-timeout.C:
+			StatusChan <- 1
+			return
+		default:
+			if int(Result.RecvNoAnsCount+Result.RecvAnsCount) == b.Concurrency*b.TotalRequest {
+				StatusChan <- 0
+				return
+			}
+		}
+
+		time.Sleep(1 * time.Second)
+	}
 }
 
-func (b Bomb) VerifyDNS() bool {
+func (b Bomb) VerifyDNS() error {
 	// Resolve the query
 	r, err := rdns.NewDNSClient("test-dns", b.Server, "udp", rdns.DNSClientOptions{
-		Timeout: b.Timeout,
+		QueryTimeout: b.LastTimeout,
 	})
 	if err != nil {
-		return false
+		return err
 	}
 
 	// Build a query
 	q := new(dns.Msg)
-	q.SetQuestion("www.google.com.", dns.TypeA)
+	q.SetQuestion(b.DomainArray[0], dns.TypeA)
 
 	if _, err = r.Resolve(q, rdns.ClientInfo{}); err != nil {
-		return false
+		return err
 	}
 
-	return true
+	return nil
 }

@@ -1,39 +1,49 @@
 module github.com/cody0704/dotbomb
 
-go 1.17
+go 1.23.0
+
+toolchain go1.24.3
 
 require (
-	github.com/folbricht/routedns v0.1.0
-	github.com/miekg/dns v1.1.47
+	github.com/folbricht/routedns v0.1.113
+	github.com/miekg/dns v1.1.59
 	github.com/pion/udp v0.1.1
+	golang.org/x/time v0.5.0
 )
 
 replace github.com/folbricht/routedns v0.1.0 => github.com/cody0704/routedns v0.2.1
 
 require (
-	github.com/cheekybits/genny v1.0.0 // indirect
-	github.com/fsnotify/fsnotify v1.4.9 // indirect
-	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
+	github.com/RackSec/srslog v0.0.0-20180709174129-a4725f04ec91 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cisco/go-hpke v0.0.0-20230407100446-246075f83609 // indirect
+	github.com/cisco/go-tls-syntax v0.0.0-20200617162716-46b0cfb76b9b // indirect
+	github.com/cloudflare/circl v1.3.7 // indirect
+	github.com/cloudflare/odoh-go v1.0.1-0.20230926114050-f39fa019b017 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
+	github.com/google/pprof v0.0.0-20240507183855-6f11f98ebb1c // indirect
 	github.com/jtacoma/uritemplates v1.0.0 // indirect
-	github.com/lucas-clemente/quic-go v0.25.0 // indirect
-	github.com/marten-seemann/qpack v0.2.1 // indirect
-	github.com/marten-seemann/qtls-go1-16 v0.1.4 // indirect
-	github.com/marten-seemann/qtls-go1-17 v0.1.0 // indirect
-	github.com/marten-seemann/qtls-go1-18 v0.1.0-beta.1 // indirect
-	github.com/nxadm/tail v1.4.8 // indirect
-	github.com/onsi/ginkgo v1.16.4 // indirect
-	github.com/oschwald/maxminddb-golang v1.8.0 // indirect
-	github.com/pion/dtls/v2 v2.1.0 // indirect
+	github.com/onsi/ginkgo/v2 v2.17.3 // indirect
+	github.com/oschwald/maxminddb-golang v1.12.0 // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
+	github.com/pion/dtls/v2 v2.2.11 // indirect
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/pion/transport v0.13.0 // indirect
+	github.com/pion/transport/v2 v2.2.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/sirupsen/logrus v1.8.1 // indirect
-	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
-	golang.org/x/mod v0.4.2 // indirect
-	golang.org/x/net v0.0.0-20220225172249-27dd8689420f // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
-	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/tools v0.1.6-0.20210726203631-07bc1bf47fb2 // indirect
-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
-	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
+	github.com/quic-go/qpack v0.5.1 // indirect
+	github.com/quic-go/quic-go v0.48.2 // indirect
+	github.com/redis/go-redis/v9 v9.5.5 // indirect
+	github.com/txthinking/runnergroup v0.0.0-20230325130830-408dc5853f86 // indirect
+	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301 // indirect
+	go.uber.org/mock v0.4.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
+	golang.org/x/mod v0.17.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 )

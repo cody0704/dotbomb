@@ -30,9 +30,9 @@ func (b Bomb) DoH() {
 
 			// Resolve the query
 			dohClient, err := rdns.NewDoHClient("stress-doh-"+strconv.Itoa(count), b.Server, rdns.DoHClientOptions{
-				Method:                b.Method,
-				TLSConfig:             &config,
-				ResponseHeaderTimeout: b.Timeout,
+				Method:       b.Method,
+				TLSConfig:    &config,
+				QueryTimeout: b.LastTimeout,
 			})
 			if err != nil {
 				log.Println(err)
@@ -41,7 +41,7 @@ func (b Bomb) DoH() {
 			}
 
 			for i := 0; i < b.TotalRequest; i++ {
-				domain := b.DomainArray[i%domainCount] + "."
+				domain := b.DomainArray[i%domainCount]
 
 				q.SetQuestion(domain, dns.TypeA)
 				atomic.AddUint64(&Result.SendCount, 1)
@@ -55,7 +55,7 @@ func (b Bomb) DoH() {
 					}
 					continue
 				}
-				Result.LastTime = time.Since(t1)
+				Result.SendLastTime = time.Since(t1)
 
 				answers := resp.Answer
 				if len(answers) > 0 {
@@ -85,9 +85,9 @@ func (b Bomb) VerifyDoH() bool {
 
 	// Resolve the query
 	r, err := rdns.NewDoHClient("test-doh", b.Server, rdns.DoHClientOptions{
-		ResponseHeaderTimeout: b.Timeout,
-		Method:                b.Method,
-		TLSConfig:             &config,
+		QueryTimeout: b.LastTimeout,
+		Method:       b.Method,
+		TLSConfig:    &config,
 	})
 	if err != nil {
 		return false

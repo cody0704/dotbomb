@@ -17,6 +17,9 @@ var (
 	requestIP    string
 	requestPort  string
 	domainFile   string
+
+	// Stress
+	interval int
 )
 
 func init() {
@@ -29,6 +32,7 @@ func init() {
 	flag.StringVar(&requestIP, "r", "", "request ip address")
 	flag.StringVar(&requestPort, "p", "", "request port")
 	flag.StringVar(&domainFile, "f", "", "domain list file")
+	flag.IntVar(&interval, "tps", 30, "Packet send tps")
 
 	flag.Parse()
 
@@ -40,6 +44,7 @@ func init() {
 	if concurrency == 0 || totalRequest == 0 || requestIP == "" || mode == "" {
 		fmt.Println("Example: dotbomb -m dot -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt")
 		fmt.Println("-v [Version]")
+		fmt.Println("-tps [TPS] <Number> Default: 30")
 		fmt.Println("-m [Mode] Default: dot, Option: dot / doh (doh - POST, dohg - GET, dohp - POST) / dns")
 		fmt.Println("-l [Request Latency] <Number> Microsecond Unit 0.000001")
 		fmt.Println("-c [Concurrency] <Number>")

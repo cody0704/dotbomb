@@ -21,8 +21,9 @@ func main() {
 		Concurrency:  concurrency,
 		TotalRequest: totalRequest,
 		Server:       requestIP + ":" + requestPort,
-		Timeout:      time.Second * time.Duration(timeout),
+		LastTimeout:  time.Second * time.Duration(timeout),
 		Latency:      time.Microsecond * time.Duration(latency),
+		Interval:     interval,
 	}
 
 	file, err := os.Open(domainFile)
@@ -52,11 +53,15 @@ func main() {
 	log.Printf("Timeout: %ds", timeout)
 	log.Printf("Latency: %.6gs", bomb.Latency.Seconds())
 
+	log.Println("total request:", concurrency*totalRequest)
+
+	t1 := time.Now() // get current time
+
 	switch mode {
 	case "dns":
 		log.Println("Mode:", mode)
-		if !bomb.VerifyDNS() {
-			log.Println("Cannot connect to DNS Server:", bomb.Server)
+		if err := bomb.VerifyDNS(); err != nil {
+			log.Println("Cannot connect to DNS Server:", err)
 			os.Exit(0)
 			return
 		}
@@ -113,32 +118,44 @@ func main() {
 
 	select {
 	case <-sigChan:
-		report(stress.Result, 1)
+		report(t1, stress.Result, 2)
 	case status := <-stress.StatusChan:
-		report(stress.Result, status)
+		report(t1, stress.Result, status)
 	}
 }
 
-func report(report stress.StressReport, status int) {
+func report(t1 time.Time, report stress.StressReport, status int) {
+	elapsed := time.Since(t1)
+	fmt.Printf("\nRun Time:\t %.6fs\n", elapsed.Seconds())
+	fmt.Println("Concurrency:\t", concurrency)
 	switch status {
 	case 0:
-		fmt.Println("\n\nStatus:\t\t", "Finish")
+		fmt.Println("Status:\t\t", "Finish")
 	case 1:
-		fmt.Println("\nStatus:\t\t", "Cancle")
+		fmt.Println("Status:\t\t", "Timeout")
+	case 2:
+		fmt.Println("Status:\t\t", "Cancle")
 	}
-	fmt.Printf("Time:\t\t %.6fs\n", report.LastTime.Seconds())
-	totalResponse := report.RecvAnsCount + report.RecvNoAnsCount
-	avgLantency := report.LastTime.Seconds() / float64(totalResponse)
-	if math.IsInf(avgLantency, 0) || math.IsNaN(avgLantency) {
-		fmt.Println("Avg Latency:\t 0.000000s")
-	} else {
-		fmt.Printf("Avg Latency:\t %.6fs\n", report.LastTime.Seconds()/float64(totalResponse))
-	}
-	fmt.Println("==========================================")
+
+	fmt.Println("======================================================")
 	fmt.Println("Send:\t\t", report.SendCount)
-	fmt.Println("Recv:\t\t", report.RecvAnsCount+report.RecvNoAnsCount+report.TimeoutCount+report.OtherCount)
-	fmt.Println("  Answer:\t", report.RecvAnsCount)
-	fmt.Println("  NoAnswer:\t", report.RecvNoAnsCount)
-	fmt.Println("  Timeout:\t", report.TimeoutCount)
-	fmt.Println("  Other:\t", report.OtherCount)
+	fmt.Printf("  LastTime:\t %.6fs\n", report.SendLastTime.Seconds())
+	fmt.Printf("  AvgTime:\t %.6fs\n", report.SendLastTime.Seconds()/float64(report.SendCount))
+	fmt.Printf("  Send TPS:\t %.0f\n", float64(report.SendCount)/report.SendLastTime.Seconds())
+
+	recvCount := report.RecvAnsCount + report.RecvNoAnsCount
+	fmt.Println("Recv:\t\t", recvCount)
+	fmt.Printf("  LastTime:\t %.6fs\n", report.RecvLastTime.Seconds())
+	recvAvgTime := report.RecvLastTime.Seconds() / float64(recvCount)
+	if math.IsNaN(recvAvgTime) || math.IsInf(recvAvgTime, 0) {
+		fmt.Println("  AvgTime:\t 0.000000s")
+	} else {
+		fmt.Printf("  AvgTime:\t %.6fs\n", recvAvgTime)
+	}
+	fmt.Printf("  Recv TPS:\t %.0f\n", float64(recvCount)/report.RecvLastTime.Seconds())
+	fmt.Println("  QType:")
+	fmt.Println("    Answer:\t", report.RecvAnsCount)
+	fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount)
+	fmt.Println("    Timeout:\t", report.TimeoutCount)
+	fmt.Println("    Other:\t", report.OtherCount)
 }
