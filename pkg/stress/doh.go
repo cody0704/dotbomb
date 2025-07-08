@@ -1,8 +1,8 @@
 package stress
 
 import (
+	"context"
 	"crypto/tls"
-	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -11,20 +11,27 @@ import (
 
 	rdns "github.com/folbricht/routedns"
 	"github.com/miekg/dns"
+	"golang.org/x/time/rate"
 )
 
 func (b Bomb) DoH() {
-	t1 := time.Now()
+	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
+	defer timeout.Stop()
+
+	// TPS 限制
+	var ctx = context.Background()
+	limiter := rate.NewLimiter(rate.Limit(b.Interval), 1)
 
 	config := tls.Config{
 		InsecureSkipVerify: true,
 	}
 
-	wg.Add(b.Concurrency)
-	var domainCount = len(b.DomainArray)
-	finish := b.TotalRequest * b.Concurrency
+	var domainCount = len(b.Domains)
+
+	t1 := time.Now() // get current time
+
 	for count := 1; count <= b.Concurrency; count++ {
-		go func(count, finish int) {
+		go func() {
 			// Build a query
 			q := new(dns.Msg)
 
@@ -36,16 +43,18 @@ func (b Bomb) DoH() {
 			})
 			if err != nil {
 				log.Println(err)
-				wg.Done()
 				return
 			}
 
 			for i := 0; i < b.TotalRequest; i++ {
-				domain := b.DomainArray[i%domainCount]
+				domain := b.Domains[i%domainCount]
+				qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
 
-				q.SetQuestion(domain, dns.TypeA)
+				q.SetQuestion(domain, qtype)
+				Result.SendLastTime = time.Since(t1)
 				atomic.AddUint64(&Result.SendCount, 1)
-				fmt.Printf("Progress:\t %d/%d\r", Result.SendCount, finish)
+				limiter.Wait(ctx)
+
 				resp, err := dohClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
 					if strings.Contains(err.Error(), "timed out") || strings.Contains(err.Error(), "timeout") {
@@ -55,8 +64,8 @@ func (b Bomb) DoH() {
 					}
 					continue
 				}
-				Result.SendLastTime = time.Since(t1)
 
+				Result.RecvLastTime = time.Since(t1)
 				answers := resp.Answer
 				if len(answers) > 0 {
 					switch len(strings.Split(answers[0].String(), "\t")) {
@@ -69,38 +78,24 @@ func (b Bomb) DoH() {
 					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
 				}
 
-				time.Sleep(b.Latency)
+				timeout.Reset(b.LastTimeout)
 			}
-			wg.Done()
-		}(count, finish)
-	}
-	wg.Wait()
-	StatusChan <- 0
-}
 
-func (b Bomb) VerifyDoH() bool {
-	config := tls.Config{
-		InsecureSkipVerify: true,
+		}()
 	}
 
-	// Resolve the query
-	r, err := rdns.NewDoHClient("test-doh", b.Server, rdns.DoHClientOptions{
-		QueryTimeout: b.LastTimeout,
-		Method:       b.Method,
-		TLSConfig:    &config,
-	})
-	if err != nil {
-		return false
+	for {
+		select {
+		case <-timeout.C:
+			StatusChan <- 1
+			return
+		default:
+			if int(Result.RecvNoAnsCount+Result.RecvAnsCount) == b.Concurrency*b.TotalRequest {
+				StatusChan <- 0
+				return
+			}
+		}
+
+		time.Sleep(1 * time.Second)
 	}
-
-	// Build a query
-	q := new(dns.Msg)
-	q.SetQuestion("www.google.com.", dns.TypeA)
-
-	if _, err = r.Resolve(q, rdns.ClientInfo{}); err != nil {
-		log.Println(err)
-		return false
-	}
-
-	return true
 }

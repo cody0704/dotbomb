@@ -13,9 +13,8 @@ var (
 	timeout      int
 	concurrency  int
 	totalRequest int
-	latency      int
 	requestIP    string
-	requestPort  string
+	requestPort  int
 	domainFile   string
 
 	// Stress
@@ -24,13 +23,12 @@ var (
 
 func init() {
 	flag.BoolVar(&version, "v", false, "number of concurrency")
-	flag.StringVar(&mode, "m", "dot", "dot / doh Method: Post / dohp: DoH Method - Post / doh: DoH Method - Get / dns")
-	flag.IntVar(&latency, "l", 0, "request latency")
+	flag.StringVar(&mode, "m", "dot", "dot / doh / dns / dnssec")
 	flag.IntVar(&timeout, "t", 1, "request Timeout")
 	flag.IntVar(&concurrency, "c", 1, "number of concurrency")
 	flag.IntVar(&totalRequest, "n", 1, "number of request")
-	flag.StringVar(&requestIP, "r", "", "request ip address")
-	flag.StringVar(&requestPort, "p", "", "request port")
+	flag.StringVar(&requestIP, "r", "", "dns ip address")
+	flag.IntVar(&requestPort, "p", 0, "dns port")
 	flag.StringVar(&domainFile, "f", "", "domain list file")
 	flag.IntVar(&interval, "tps", 30, "Packet send tps")
 
@@ -64,18 +62,14 @@ func init() {
 		os.Exit(0)
 	}
 
-	if requestPort == "" {
+	if requestPort == 0 {
 		switch mode {
 		case "dns":
-			requestPort = "53"
+			requestPort = 53
 		case "dot":
-			requestPort = "853"
+			requestPort = 853
 		case "doh":
-			requestPort = "443"
-		case "dohg":
-			requestPort = "443"
-		case "dohp":
-			requestPort = "443"
+			requestPort = 443
 		}
 	}
 }

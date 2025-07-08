@@ -1,0 +1,169 @@
+DoT Server: 192.168.0.31:853 Concurrency: 150 Total Request: 1
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+count
+
+Run Time:	 1.001351s
+Concurrency:	 150
+Status:		 Finish
+======================================================
+Send:		 150
+  LastTime:	 0.004475s
+  AvgTime:	 0.000030s
+  Send TPS:	 33520
+Recv:		 150
+  LastTime:	 0.079931s
+  AvgTime:	 0.000533s
+  Recv TPS:	 1877
+  QType:
+    Answer:	 150
+    NoAnswer:	 0
+    Timeout:	 0
+    Other:	 0

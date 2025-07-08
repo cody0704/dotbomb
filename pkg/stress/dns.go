@@ -2,19 +2,18 @@ package stress
 
 import (
 	"context"
+	"fmt"
 	"log"
-	"runtime"
-	"strconv"
+	"net"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	rdns "github.com/folbricht/routedns"
 	"github.com/miekg/dns"
 	"golang.org/x/time/rate"
 )
 
-func (b *Bomb) DNS() {
+func (b *Bomb) DNS(requestIP string, requestPort int) {
 	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
 	defer timeout.Stop()
 
@@ -22,47 +21,65 @@ func (b *Bomb) DNS() {
 	var ctx = context.Background()
 	limiter := rate.NewLimiter(rate.Limit(b.Interval), 1)
 
-	var domainCount = len(b.DomainArray)
-	finish := b.TotalRequest * b.Concurrency
+	var domainCount = len(b.Domains)
 
 	t1 := time.Now() // get current time
 	for count := 1; count <= b.Concurrency; count++ {
-		go func(count, finish int) {
+		// 創建一個本地地址，使用端口 0
+		laddr, err := net.ResolveUDPAddr("udp", ":0")
+		if err != nil {
+			fmt.Println("Error resolving local address:", err)
+			continue
+		}
+
+		conn, err := net.DialUDP("udp", laddr, &net.UDPAddr{IP: net.ParseIP(requestIP), Port: requestPort})
+		if err != nil {
+			log.Println("cannot create udp socket:", err)
+			continue
+		}
+
+		conn.SetWriteBuffer(32 * 1024 * 1024)
+		conn.SetReadBuffer(256 * 1024 * 1024)
+
+		go func() {
 			// Build a query
 			q := new(dns.Msg)
 
-			// Resolve the query
-			dnsClient, err := rdns.NewDNSClient("stress-dns-"+strconv.Itoa(count), b.Server, "udp", rdns.DNSClientOptions{
-				QueryTimeout: b.LastTimeout,
-			})
-			if err != nil {
-				pc, file, line, ok := runtime.Caller(1)
-				if ok {
-					fn := runtime.FuncForPC(pc)
-					log.Printf("[ERROR] %s:%d [%s] %v", file, line, fn.Name(), err)
-				}
-				return
-			}
-
 			for i := range b.TotalRequest {
-				domain := b.DomainArray[i%domainCount]
+				domain := b.Domains[i%domainCount]
+				qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
 
-				q.SetQuestion(domain, dns.TypeA)
+				q.SetQuestion(domain, qtype)
+
+				dnsPacket, _ := q.Pack()
+
+				conn.Write(dnsPacket)
 				Result.SendLastTime = time.Since(t1)
 				atomic.AddUint64(&Result.SendCount, 1)
 
-				resp, err := dnsClient.Resolve(q, rdns.ClientInfo{})
+				limiter.Wait(ctx)
+			}
+		}()
+
+		go func(conn *net.UDPConn) {
+			for {
+				var incoming [1024]byte
+				var dnsReply dns.Msg
+				n, err := conn.Read(incoming[:])
 				if err != nil {
-					if strings.Contains(err.Error(), "timed out") {
-						atomic.AddUint64(&Result.TimeoutCount, 1)
-					} else {
-						atomic.AddUint64(&Result.OtherCount, 1)
-					}
-					continue
+					log.Println("recv dns err", err)
+					atomic.AddUint64(&Result.StopSockCount, 1)
+					// StressChannel <- fmt.Sprintf("%d close", count)
+					break
 				}
 				Result.RecvLastTime = time.Since(t1)
 
-				answers := resp.Answer
+				err = dnsReply.Unpack(incoming[:n])
+				if err != nil {
+					log.Println("recv dns msg err", err)
+				}
+
+				answers := dnsReply.Answer
 				if len(answers) > 0 {
 					switch len(strings.Split(answers[0].String(), "\t")) {
 					case 5:
@@ -74,9 +91,9 @@ func (b *Bomb) DNS() {
 					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
 				}
 
-				limiter.Wait(ctx)
+				timeout.Reset(b.LastTimeout)
 			}
-		}(count, finish)
+		}(conn)
 	}
 
 	for {
@@ -93,24 +110,4 @@ func (b *Bomb) DNS() {
 
 		time.Sleep(1 * time.Second)
 	}
-}
-
-func (b Bomb) VerifyDNS() error {
-	// Resolve the query
-	r, err := rdns.NewDNSClient("test-dns", b.Server, "udp", rdns.DNSClientOptions{
-		QueryTimeout: b.LastTimeout,
-	})
-	if err != nil {
-		return err
-	}
-
-	// Build a query
-	q := new(dns.Msg)
-	q.SetQuestion(b.DomainArray[0], dns.TypeA)
-
-	if _, err = r.Resolve(q, rdns.ClientInfo{}); err != nil {
-		return err
-	}
-
-	return nil
 }

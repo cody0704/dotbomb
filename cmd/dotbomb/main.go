@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,9 +21,8 @@ func main() {
 	var bomb = stress.Bomb{
 		Concurrency:  concurrency,
 		TotalRequest: totalRequest,
-		Server:       requestIP + ":" + requestPort,
+		Server:       fmt.Sprintf("%s:%d", requestIP, requestPort),
 		LastTimeout:  time.Second * time.Duration(timeout),
-		Latency:      time.Microsecond * time.Duration(latency),
 		Interval:     interval,
 	}
 
@@ -33,14 +33,21 @@ func main() {
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		domain := scanner.Text()
-		if domain == "" {
+		line := scanner.Text()
+		if line == "" {
 			continue
 		}
-		bomb.DomainArray = append(bomb.DomainArray, domain)
+
+		parts := strings.Split(line, " ")
+		if len(parts) < 2 {
+			log.Fatal("Invalid domain format in", domainFile, ":", line)
+		}
+
+		bomb.Domains = append(bomb.Domains, parts[0])
+		bomb.DomainQType = append(bomb.DomainQType, parts[1])
 	}
 
-	if len(bomb.DomainArray) == 0 {
+	if len(bomb.Domains) == 0 {
 		log.Fatal(domainFile, " does not have any domains")
 	}
 
@@ -51,7 +58,6 @@ func main() {
 
 	log.Println("DoTBomb start stress...")
 	log.Printf("Timeout: %ds", timeout)
-	log.Printf("Latency: %.6gs", bomb.Latency.Seconds())
 
 	log.Println("total request:", concurrency*totalRequest)
 
@@ -60,21 +66,11 @@ func main() {
 	switch mode {
 	case "dns":
 		log.Println("Mode:", mode)
-		if err := bomb.VerifyDNS(); err != nil {
-			log.Println("Cannot connect to DNS Server:", err)
-			os.Exit(0)
-			return
-		}
 		log.Println("DNS Server:", bomb.Server)
 
-		go bomb.DNS()
+		go bomb.DNS(requestIP, requestPort)
 	case "dot":
 		log.Println("Mode:", mode)
-		if !bomb.VerifyDoT() {
-			log.Println("Cannot connect to DoT Server:", bomb.Server)
-			os.Exit(0)
-			return
-		}
 		log.Println("DoT Server:", bomb.Server)
 
 		go bomb.DoT()
@@ -82,35 +78,7 @@ func main() {
 		log.Println("Mode:", mode, "Method: POST")
 		bomb.Server = "https://" + bomb.Server + "/dns-query{?dns}"
 		bomb.Method = "POST"
-		if !bomb.VerifyDoH() {
-			log.Println("Cannot connect to DoH Server:", bomb.Server)
-			os.Exit(0)
-			return
-		}
-		log.Println("DoH Server:", bomb.Server)
 
-		go bomb.DoH()
-	case "dohp":
-		log.Println("Mode:", mode, "Method: POST")
-		bomb.Server = "https://" + bomb.Server + "/dns-query{?dns}"
-		bomb.Method = "POST"
-		if !bomb.VerifyDoH() {
-			log.Println("Cannot connect to DoH Server:", bomb.Server)
-			os.Exit(0)
-			return
-		}
-		log.Println("DoH Server:", bomb.Server)
-
-		go bomb.DoH()
-	case "dohg":
-		log.Println("Mode:", mode, "Method: GET")
-		bomb.Server = "https://" + bomb.Server + "/dns-query{?dns}"
-		bomb.Method = "GET"
-		if !bomb.VerifyDoH() {
-			log.Println("Cannot connect to DoH Server:", bomb.Server)
-			os.Exit(0)
-			return
-		}
 		log.Println("DoH Server:", bomb.Server)
 
 		go bomb.DoH()

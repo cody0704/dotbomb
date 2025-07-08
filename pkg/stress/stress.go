@@ -1,8 +1,9 @@
 package stress
 
 import (
-	"sync"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 type Bomb struct {
@@ -10,8 +11,8 @@ type Bomb struct {
 	TotalRequest int
 	Server       string
 	Method       string
-	DomainArray  []string
-	Latency      time.Duration
+	Domains      []string
+	DomainQType  []string
 	LastTimeout  time.Duration
 
 	Interval int
@@ -31,4 +32,22 @@ type StressReport struct {
 
 var Result StressReport
 var StatusChan = make(chan int, 1)
-var wg sync.WaitGroup
+
+var QType map[string]uint16 = map[string]uint16{
+	"A":      dns.TypeA,
+	"AAAA":   dns.TypeAAAA,
+	"CNAME":  dns.TypeCNAME,
+	"MX":     dns.TypeMX,
+	"NS":     dns.TypeNS,
+	"TXT":    dns.TypeTXT,
+	"SRV":    dns.TypeSRV,
+	"PTR":    dns.TypePTR,
+	"SOA":    dns.TypeSOA,
+	"DNSKEY": dns.TypeDNSKEY,
+	"DS":     dns.TypeDS,
+	"CAA":    dns.TypeCAA,
+	"NAPTR":  dns.TypeNAPTR,
+	"TLSA":   dns.TypeTLSA,
+	"SPF":    dns.TypeSPF,
+	"ANY":    dns.TypeANY,
+}
