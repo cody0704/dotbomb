@@ -2,19 +2,18 @@ package stress
 
 import (
 	"context"
-	"crypto/tls"
+	"fmt"
 	"log"
-	"strconv"
+	"net"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	rdns "github.com/folbricht/routedns"
 	"github.com/miekg/dns"
 	"golang.org/x/time/rate"
 )
 
-func (b Bomb) DoT() {
+func (b *Bomb) DNSSEC(requestIP string, requestPort int) {
 	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
 	defer timeout.Stop()
 
@@ -22,49 +21,76 @@ func (b Bomb) DoT() {
 	var ctx = context.Background()
 	limiter := rate.NewLimiter(rate.Limit(b.Interval), 1)
 
-	config := tls.Config{
-		InsecureSkipVerify: true,
-	}
-
 	var domainCount = len(b.Domains)
 
 	t1 := time.Now() // get current time
 	for count := 1; count <= b.Concurrency; count++ {
+		// 創建一個本地地址，使用端口 0
+		laddr, err := net.ResolveUDPAddr("udp", ":0")
+		if err != nil {
+			fmt.Println("Error resolving local address:", err)
+			continue
+		}
+
+		conn, err := net.DialUDP("udp", laddr, &net.UDPAddr{IP: net.ParseIP(requestIP), Port: requestPort})
+		if err != nil {
+			log.Println("cannot create udp socket:", err)
+			continue
+		}
+
+		conn.SetWriteBuffer(32 * 1024 * 1024)
+		conn.SetReadBuffer(256 * 1024 * 1024)
+
 		go func() {
 			// Build a query
 			q := new(dns.Msg)
-
-			// Resolve the query
-			dotClient, err := rdns.NewDoTClient("stress-dot-"+strconv.Itoa(count), b.Server, rdns.DoTClientOptions{
-				TLSConfig:    &config,
-				QueryTimeout: b.LastTimeout,
-			})
-			if err != nil {
-				log.Println(err)
-				return
+			// 新增 OPT RR 啟用 DNSSEC
+			opt := &dns.OPT{
+				Hdr: dns.RR_Header{
+					Name:   ".",
+					Rrtype: dns.TypeOPT,
+					Class:  4096, // UDP payload size
+				},
 			}
+			// 啟用 DO bit
+			opt.SetDo()
+			q.Extra = append(q.Extra, opt)
 
 			for i := range b.TotalRequest {
 				domain := b.Domains[i%domainCount]
 				qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
 
 				q.SetQuestion(domain, qtype)
+
+				dnsPacket, _ := q.Pack()
+
+				conn.Write(dnsPacket)
 				Result.SendLastTime = time.Since(t1)
 				atomic.AddUint64(&Result.SendCount, 1)
-				limiter.Wait(ctx)
 
-				resp, err := dotClient.Resolve(q, rdns.ClientInfo{})
+				limiter.Wait(ctx)
+			}
+		}()
+
+		go func(conn *net.UDPConn) {
+			for {
+				var incoming [1024]byte
+				var dnsReply dns.Msg
+				n, err := conn.Read(incoming[:])
 				if err != nil {
-					if strings.Contains(err.Error(), "timed out") {
-						atomic.AddUint64(&Result.TimeoutCount, 1)
-					} else {
-						atomic.AddUint64(&Result.OtherCount, 1)
-					}
-					continue
+					log.Println("recv dns err", err)
+					atomic.AddUint64(&Result.StopSockCount, 1)
+					// StressChannel <- fmt.Sprintf("%d close", count)
+					break
+				}
+				Result.RecvLastTime = time.Since(t1)
+
+				err = dnsReply.Unpack(incoming[:n])
+				if err != nil {
+					log.Println("recv dns msg err", err)
 				}
 
-				Result.RecvLastTime = time.Since(t1)
-				answers := resp.Answer
+				answers := dnsReply.Answer
 				if len(answers) > 0 {
 					switch len(strings.Split(answers[0].String(), "\t")) {
 					case 5:
@@ -78,7 +104,7 @@ func (b Bomb) DoT() {
 
 				timeout.Reset(b.LastTimeout)
 			}
-		}()
+		}(conn)
 	}
 
 	for {

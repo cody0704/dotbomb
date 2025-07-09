@@ -64,6 +64,11 @@ func main() {
 	t1 := time.Now() // get current time
 
 	switch mode {
+	case "dnssec":
+		log.Println("Mode:", mode)
+		log.Println("DNS Server:", bomb.Server)
+
+		go bomb.DNSSEC(requestIP, requestPort)
 	case "dns":
 		log.Println("Mode:", mode)
 		log.Println("DNS Server:", bomb.Server)
@@ -71,7 +76,7 @@ func main() {
 		go bomb.DNS(requestIP, requestPort)
 	case "dot":
 		log.Println("Mode:", mode)
-		log.Println("DoT Server:", bomb.Server)
+		log.Println("DNS Server:", bomb.Server)
 
 		go bomb.DoT()
 	case "doh":

@@ -56,15 +56,17 @@ func init() {
 	}
 
 	switch mode {
-	case "dns", "dot", "doh", "dohg", "dohp":
+	case "dns", "dot", "doh", "dnssec":
 	default:
-		fmt.Println("-m [Mode] Default: dot, Option: dot / doh / dns")
+		fmt.Println("-m [Mode] Default: dot, Option: dot / doh / dns / dnssec")
 		os.Exit(0)
 	}
 
 	if requestPort == 0 {
 		switch mode {
 		case "dns":
+			requestPort = 53
+		case "dnssec":
 			requestPort = 53
 		case "dot":
 			requestPort = 853
