@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"log"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cody0704/dotbomb/pkg/stress"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -21,9 +23,7 @@ func main() {
 	var bomb = stress.Bomb{
 		Concurrency:  concurrency,
 		TotalRequest: totalRequest,
-		Server:       fmt.Sprintf("%s:%d", requestIP, requestPort),
 		LastTimeout:  time.Second * time.Duration(timeout),
-		Interval:     interval,
 	}
 
 	file, err := os.Open(domainFile)
@@ -63,41 +63,57 @@ func main() {
 
 	t1 := time.Now() // get current time
 
+	// TPS 限制
+	var ctx = context.Background()
+	limiter := rate.NewLimiter(rate.Limit(interval), 1)
+
 	switch mode {
+	case "all":
+		log.Println("Mode:", mode)
+
+		go bomb.DNSSEC(ctx, limiter, requestIP, 53)
+		go bomb.DNS(ctx, limiter, requestIP, 53)
+		go bomb.DoT(ctx, limiter, requestIP, 853)
 	case "dnssec":
 		log.Println("Mode:", mode)
-		log.Println("DNS Server:", bomb.Server)
+		log.Printf("DNS Server: %s:%d", requestIP, requestPort)
 
-		go bomb.DNSSEC(requestIP, requestPort)
+		go bomb.DNSSEC(ctx, limiter, requestIP, requestPort)
 	case "dns":
 		log.Println("Mode:", mode)
-		log.Println("DNS Server:", bomb.Server)
+		log.Printf("DNS Server: %s:%d", requestIP, requestPort)
 
-		go bomb.DNS(requestIP, requestPort)
+		go bomb.DNS(ctx, limiter, requestIP, requestPort)
 	case "dot":
 		log.Println("Mode:", mode)
-		log.Println("DNS Server:", bomb.Server)
+		log.Printf("DNS Server: %s:%d", requestIP, requestPort)
 
-		go bomb.DoT()
+		go bomb.DoT(ctx, limiter, requestIP, requestPort)
 	case "doh":
 		log.Println("Mode:", mode, "Method: POST")
-		bomb.Server = "https://" + bomb.Server + "/dns-query{?dns}"
+		server := fmt.Sprintf("https://%s:%d/dns-query{?dns}", requestIP, requestPort)
+		log.Println("DoH Server: ", server)
 		bomb.Method = "POST"
 
-		log.Println("DoH Server:", bomb.Server)
+		go bomb.DoH(ctx, limiter, server)
+	case "dohg":
+		log.Println("Mode:", mode, "Method: GET")
+		server := fmt.Sprintf("https://%s:%d/dns-query", requestIP, requestPort)
+		log.Println("DoH Server: ", server)
+		bomb.Method = "GET"
 
-		go bomb.DoH()
+		go bomb.DoH(ctx, limiter, server)
 	}
 
 	select {
 	case <-sigChan:
-		report(t1, stress.Result, 2)
+		report(t1, &stress.Result, 2)
 	case status := <-stress.StatusChan:
-		report(t1, stress.Result, status)
+		report(t1, &stress.Result, status)
 	}
 }
 
-func report(t1 time.Time, report stress.StressReport, status int) {
+func report(t1 time.Time, report *stress.StressReport, status int) {
 	elapsed := time.Since(t1)
 	fmt.Printf("\nRun Time:\t %.6fs\n", elapsed.Seconds())
 	fmt.Println("Concurrency:\t", concurrency)
@@ -111,12 +127,12 @@ func report(t1 time.Time, report stress.StressReport, status int) {
 	}
 
 	fmt.Println("======================================================")
-	fmt.Println("Send:\t\t", report.SendCount)
+	fmt.Println("Send:\t\t", report.SendCount.Load())
 	fmt.Printf("  LastTime:\t %.6fs\n", report.SendLastTime.Seconds())
-	fmt.Printf("  AvgTime:\t %.6fs\n", report.SendLastTime.Seconds()/float64(report.SendCount))
-	fmt.Printf("  Send TPS:\t %.0f\n", float64(report.SendCount)/report.SendLastTime.Seconds())
+	fmt.Printf("  AvgTime:\t %.6fs\n", report.SendLastTime.Seconds()/float64(report.SendCount.Load()))
+	fmt.Printf("  Send TPS:\t %.0f\n", float64(report.SendCount.Load())/report.SendLastTime.Seconds())
 
-	recvCount := report.RecvAnsCount + report.RecvNoAnsCount
+	recvCount := report.RecvAnsCount.Load() + report.RecvNoAnsCount.Load()
 	fmt.Println("Recv:\t\t", recvCount)
 	fmt.Printf("  LastTime:\t %.6fs\n", report.RecvLastTime.Seconds())
 	recvAvgTime := report.RecvLastTime.Seconds() / float64(recvCount)
@@ -127,8 +143,8 @@ func report(t1 time.Time, report stress.StressReport, status int) {
 	}
 	fmt.Printf("  Recv TPS:\t %.0f\n", float64(recvCount)/report.RecvLastTime.Seconds())
 	fmt.Println("  QType:")
-	fmt.Println("    Answer:\t", report.RecvAnsCount)
-	fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount)
-	fmt.Println("    Timeout:\t", report.TimeoutCount)
-	fmt.Println("    Other:\t", report.OtherCount)
+	fmt.Println("    Answer:\t", report.RecvAnsCount.Load())
+	fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount.Load())
+	fmt.Println("    Timeout:\t", report.TimeoutCount.Load())
+	fmt.Println("    Other:\t", report.OtherCount.Load())
 }

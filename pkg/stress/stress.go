@@ -1,6 +1,7 @@
 package stress
 
 import (
+	"sync/atomic"
 	"time"
 
 	"github.com/miekg/dns"
@@ -9,22 +10,19 @@ import (
 type Bomb struct {
 	Concurrency  int
 	TotalRequest int
-	Server       string
 	Method       string
 	Domains      []string
 	DomainQType  []string
 	LastTimeout  time.Duration
-
-	Interval int
 }
 
 type StressReport struct {
-	SendCount      uint64
-	RecvAnsCount   uint64
-	RecvNoAnsCount uint64
-	TimeoutCount   uint64
-	OtherCount     uint64
-	StopSockCount  uint64
+	SendCount      atomic.Uint64
+	RecvAnsCount   atomic.Uint64
+	RecvNoAnsCount atomic.Uint64
+	TimeoutCount   atomic.Uint64
+	OtherCount     atomic.Uint64
+	StopSockCount  atomic.Uint64
 
 	RecvLastTime time.Duration
 	SendLastTime time.Duration

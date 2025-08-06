@@ -23,7 +23,7 @@ var (
 
 func init() {
 	flag.BoolVar(&version, "v", false, "number of concurrency")
-	flag.StringVar(&mode, "m", "dot", "dot / doh / dns / dnssec")
+	flag.StringVar(&mode, "m", "dot", "dot / doh / dns / dnssec / all")
 	flag.IntVar(&timeout, "t", 1, "request Timeout")
 	flag.IntVar(&concurrency, "c", 1, "number of concurrency")
 	flag.IntVar(&totalRequest, "n", 1, "number of request")
@@ -43,7 +43,7 @@ func init() {
 		fmt.Println("Example: dotbomb -m dot -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt")
 		fmt.Println("-v [Version]")
 		fmt.Println("-tps [TPS] <Number> Default: 30")
-		fmt.Println("-m [Mode] Default: dot, Option: dot / doh (doh - POST, dohg - GET, dohp - POST) / dns")
+		fmt.Println("-m [Mode] Default: dot, Option: dot / doh (DOH GET) / dohg (DOH POST) / dns / dnssec")
 		fmt.Println("-l [Request Latency] <Number> Microsecond Unit 0.000001")
 		fmt.Println("-c [Concurrency] <Number>")
 		fmt.Println("-t [Timeout] <Second>")
@@ -56,9 +56,9 @@ func init() {
 	}
 
 	switch mode {
-	case "dns", "dot", "doh", "dnssec":
+	case "dns", "dot", "doh", "dohg", "dohp", "dnssec", "all":
 	default:
-		fmt.Println("-m [Mode] Default: dot, Option: dot / doh / dns / dnssec")
+		fmt.Println("-m [Mode] Default: dot, Option: dot / doh / dohg / dns / dnssec / all")
 		os.Exit(0)
 	}
 
@@ -70,7 +70,7 @@ func init() {
 			requestPort = 53
 		case "dot":
 			requestPort = 853
-		case "doh":
+		case "doh", "dohg":
 			requestPort = 443
 		}
 	}

@@ -6,7 +6,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	rdns "github.com/folbricht/routedns"
@@ -14,13 +13,9 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func (b Bomb) DoH() {
+func (b Bomb) DoH(ctx context.Context, limiter *rate.Limiter, server string) {
 	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
 	defer timeout.Stop()
-
-	// TPS 限制
-	var ctx = context.Background()
-	limiter := rate.NewLimiter(rate.Limit(b.Interval), 1)
 
 	config := tls.Config{
 		InsecureSkipVerify: true,
@@ -30,13 +25,13 @@ func (b Bomb) DoH() {
 
 	t1 := time.Now() // get current time
 
-	for count := 1; count <= b.Concurrency; count++ {
-		go func() {
+	for workerID := range b.Concurrency {
+		go func(workerID int) {
 			// Build a query
 			q := new(dns.Msg)
 
 			// Resolve the query
-			dohClient, err := rdns.NewDoHClient("stress-doh-"+strconv.Itoa(count), b.Server, rdns.DoHClientOptions{
+			dohClient, err := rdns.NewDoHClient("stress-doh-"+strconv.Itoa(workerID), server, rdns.DoHClientOptions{
 				Method:       b.Method,
 				TLSConfig:    &config,
 				QueryTimeout: b.LastTimeout,
@@ -46,21 +41,21 @@ func (b Bomb) DoH() {
 				return
 			}
 
-			for i := 0; i < b.TotalRequest; i++ {
+			for i := range b.TotalRequest {
 				domain := b.Domains[i%domainCount]
 				qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
 
 				q.SetQuestion(domain, qtype)
 				Result.SendLastTime = time.Since(t1)
-				atomic.AddUint64(&Result.SendCount, 1)
+				Result.SendCount.Add(1)
 				limiter.Wait(ctx)
 
 				resp, err := dohClient.Resolve(q, rdns.ClientInfo{})
 				if err != nil {
 					if strings.Contains(err.Error(), "timed out") || strings.Contains(err.Error(), "timeout") {
-						atomic.AddUint64(&Result.TimeoutCount, 1)
+						Result.TimeoutCount.Add(1)
 					} else {
-						atomic.AddUint64(&Result.OtherCount, 1)
+						Result.OtherCount.Add(1)
 					}
 					continue
 				}
@@ -70,18 +65,18 @@ func (b Bomb) DoH() {
 				if len(answers) > 0 {
 					switch len(strings.Split(answers[0].String(), "\t")) {
 					case 5:
-						atomic.AddUint64(&Result.RecvAnsCount, 1)
+						Result.RecvAnsCount.Add(1)
 					default:
-						atomic.AddUint64(&Result.RecvNoAnsCount, 1)
+						Result.RecvNoAnsCount.Add(1)
 					}
 				} else {
-					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
+					Result.RecvNoAnsCount.Add(1)
 				}
 
 				timeout.Reset(b.LastTimeout)
 			}
 
-		}()
+		}(workerID)
 	}
 
 	for {
@@ -90,7 +85,7 @@ func (b Bomb) DoH() {
 			StatusChan <- 1
 			return
 		default:
-			if int(Result.RecvNoAnsCount+Result.RecvAnsCount) == b.Concurrency*b.TotalRequest {
+			if int(Result.RecvNoAnsCount.Load()+Result.RecvAnsCount.Load()) == b.Concurrency*b.TotalRequest {
 				StatusChan <- 0
 				return
 			}

@@ -6,26 +6,21 @@ import (
 	"log"
 	"net"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/miekg/dns"
 	"golang.org/x/time/rate"
 )
 
-func (b *Bomb) DNSSEC(requestIP string, requestPort int) {
+func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP string, requestPort int) {
 	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
 	defer timeout.Stop()
-
-	// TPS 限制
-	var ctx = context.Background()
-	limiter := rate.NewLimiter(rate.Limit(b.Interval), 1)
 
 	var domainCount = len(b.Domains)
 
 	t1 := time.Now() // get current time
-	for count := 1; count <= b.Concurrency; count++ {
-		// 創建一個本地地址，使用端口 0
+	for range b.Concurrency {
+		// 創建一個本地地址，使用端口 0，會自動分配一個可用端口
 		laddr, err := net.ResolveUDPAddr("udp", ":0")
 		if err != nil {
 			fmt.Println("Error resolving local address:", err)
@@ -66,7 +61,7 @@ func (b *Bomb) DNSSEC(requestIP string, requestPort int) {
 
 				conn.Write(dnsPacket)
 				Result.SendLastTime = time.Since(t1)
-				atomic.AddUint64(&Result.SendCount, 1)
+				Result.SendCount.Add(1)
 
 				limiter.Wait(ctx)
 			}
@@ -79,7 +74,7 @@ func (b *Bomb) DNSSEC(requestIP string, requestPort int) {
 				n, err := conn.Read(incoming[:])
 				if err != nil {
 					log.Println("recv dns err", err)
-					atomic.AddUint64(&Result.StopSockCount, 1)
+					Result.StopSockCount.Add(1)
 					// StressChannel <- fmt.Sprintf("%d close", count)
 					break
 				}
@@ -94,12 +89,12 @@ func (b *Bomb) DNSSEC(requestIP string, requestPort int) {
 				if len(answers) > 0 {
 					switch len(strings.Split(answers[0].String(), "\t")) {
 					case 5:
-						atomic.AddUint64(&Result.RecvAnsCount, 1)
+						Result.RecvAnsCount.Add(1)
 					default:
-						atomic.AddUint64(&Result.RecvNoAnsCount, 1)
+						Result.RecvNoAnsCount.Add(1)
 					}
 				} else {
-					atomic.AddUint64(&Result.RecvNoAnsCount, 1)
+					Result.RecvNoAnsCount.Add(1)
 				}
 
 				timeout.Reset(b.LastTimeout)
@@ -113,7 +108,7 @@ func (b *Bomb) DNSSEC(requestIP string, requestPort int) {
 			StatusChan <- 1
 			return
 		default:
-			if int(Result.RecvNoAnsCount+Result.RecvAnsCount) == b.Concurrency*b.TotalRequest {
+			if int(Result.RecvNoAnsCount.Load()+Result.RecvAnsCount.Load()) == b.Concurrency*b.TotalRequest {
 				StatusChan <- 0
 				return
 			}
