@@ -19,6 +19,12 @@ var (
 
 	// Stress
 	interval int
+
+	// Fake
+	fakeIF        string
+	fakeIP        string
+	fakeSourceMac string
+	fakeTargetMac string
 )
 
 func init() {
@@ -32,6 +38,12 @@ func init() {
 	flag.StringVar(&domainFile, "f", "", "domain list file")
 	flag.IntVar(&interval, "tps", 30, "Packet send tps")
 
+	// Make
+	flag.StringVar(&fakeIF, "finet", "", "fake interface")
+	flag.StringVar(&fakeIP, "fip", "", "fake ip address")
+	flag.StringVar(&fakeSourceMac, "fsmac", "", "fake source mac address")
+	flag.StringVar(&fakeTargetMac, "fdmac", "", "fake target mac address")
+
 	flag.Parse()
 
 	if version {
@@ -39,12 +51,17 @@ func init() {
 		os.Exit(0)
 	}
 
-	if concurrency == 0 || totalRequest == 0 || requestIP == "" || mode == "" {
+	// check fake
+	if fakeIF != "" {
+		if fakeIP == "" || fakeSourceMac == "" || fakeTargetMac == "" {
+			fmt.Println("Fake need -finet -fip -fsmac -fdmac")
+			os.Exit(0)
+		}
+	} else if concurrency == 0 || totalRequest == 0 || requestIP == "" || mode == "" {
 		fmt.Println("Example: dotbomb -m dot -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt")
 		fmt.Println("-v [Version]")
 		fmt.Println("-tps [TPS] <Number> Default: 30")
 		fmt.Println("-m [Mode] Default: dot, Option: dot / doh (DOH GET) / dohg (DOH POST) / dns / dnssec")
-		fmt.Println("-l [Request Latency] <Number> Microsecond Unit 0.000001")
 		fmt.Println("-c [Concurrency] <Number>")
 		fmt.Println("-t [Timeout] <Second>")
 		fmt.Println("-n [request] <Number>")

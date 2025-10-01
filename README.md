@@ -3,6 +3,7 @@
 This is a DNS over TLS stress test tool
 
 Support DNS and DoH by the way
+
 ## Command usage description
 
 ```
@@ -19,10 +20,10 @@ Support DNS and DoH by the way
 
 ## Example
 
-* DoT
+- DoT
 
 ```bash
-$ dotbomb -m dot -c 6 -n 120 -t 3 -l 6000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dot -c 6 -n 120 -t 3 -tps 6000 -r 8.8.8.8 -f domains.txt
 2022/03/29 14:48:39 DoTBomb start stress...
 2022/03/29 14:48:39 Timeout: 3s
 2022/03/29 14:48:39 Latency: 0.006s
@@ -42,10 +43,10 @@ Recv:            120
   Other:         0
 ```
 
-* DNS
+- DNS
 
 ```bash
-$ dotbomb -m dns -c 4 -n 25 -t 2 -l 3000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dns -c 4 -n 25 -t 2 -tps 3000 -r 8.8.8.8 -f domains.txt
 2022/03/29 14:49:31 DoTBomb start stress...
 2022/03/29 14:49:31 Timeout: 2s
 2022/03/29 14:49:31 Latency: 0.003s
@@ -65,12 +66,12 @@ Recv:            100
   Other:         0
 ```
 
-* DoH
+- DoH
 
-* Default
+- Default
 
 ```bash
-$ dotbomb -m doh -c 6 -n 10 -t 5 -l 1000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m doh -c 6 -n 10 -t 5 -tps 1000 -r 8.8.8.8 -f domains.txt
 2022/03/29 14:50:09 DoTBomb start stress...
 2022/03/29 14:50:09 Timeout: 5s
 2022/03/29 14:50:09 Latency: 0.001s
@@ -90,10 +91,10 @@ Recv:            60
   Other:         0
 ```
 
-* POST
+- POST
 
 ```bash
-$ dotbomb -m dohp -c 5 -n 14 -t 3 -l 6000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dohp -c 5 -n 14 -t 3 -tps 6000 -r 8.8.8.8 -f domains.txt
 2022/03/29 14:50:46 DoTBomb start stress...
 2022/03/29 14:50:46 Timeout: 3s
 2022/03/29 14:50:46 Latency: 0.006s
@@ -113,10 +114,10 @@ Recv:            70
   Other:         0
 ```
 
-* GET
+- GET
 
 ```bash
-$ dotbomb -m dohg -c 100 -n 5 -t 10 -l 6500 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dohg -c 100 -n 5 -t 10 -tps 6500 -r 8.8.8.8 -f domains.txt
 2022/03/29 15:30:26 DoTBomb start stress...
 2022/03/29 15:30:26 Timeout: 10s
 2022/03/29 15:30:26 Latency: 0.0065s

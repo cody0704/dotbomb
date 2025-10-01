@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cody0704/dotbomb/pkg/stress"
+	"github.com/acom-networks/dnsbomb/pkg/stress"
 	"golang.org/x/time/rate"
 )
 
@@ -24,6 +24,11 @@ func main() {
 		Concurrency:  concurrency,
 		TotalRequest: totalRequest,
 		LastTimeout:  time.Second * time.Duration(timeout),
+		// Fake
+		FakeIF:        fakeIF,
+		FakeIP:        fakeIP,
+		FakeSourceMac: fakeSourceMac,
+		FakeTargetMac: fakeTargetMac,
 	}
 
 	file, err := os.Open(domainFile)
@@ -133,18 +138,20 @@ func report(t1 time.Time, report *stress.StressReport, status int) {
 	fmt.Printf("  Send TPS:\t %.0f\n", float64(report.SendCount.Load())/report.SendLastTime.Seconds())
 
 	recvCount := report.RecvAnsCount.Load() + report.RecvNoAnsCount.Load()
-	fmt.Println("Recv:\t\t", recvCount)
-	fmt.Printf("  LastTime:\t %.6fs\n", report.RecvLastTime.Seconds())
-	recvAvgTime := report.RecvLastTime.Seconds() / float64(recvCount)
-	if math.IsNaN(recvAvgTime) || math.IsInf(recvAvgTime, 0) {
-		fmt.Println("  AvgTime:\t 0.000000s")
-	} else {
-		fmt.Printf("  AvgTime:\t %.6fs\n", recvAvgTime)
+	if fakeIF == "" {
+		fmt.Println("Recv:\t\t", recvCount)
+		fmt.Printf("  LastTime:\t %.6fs\n", report.RecvLastTime.Seconds())
+		recvAvgTime := report.RecvLastTime.Seconds() / float64(recvCount)
+		if math.IsNaN(recvAvgTime) || math.IsInf(recvAvgTime, 0) {
+			fmt.Println("  AvgTime:\t 0.000000s")
+		} else {
+			fmt.Printf("  AvgTime:\t %.6fs\n", recvAvgTime)
+		}
+		fmt.Printf("  Recv TPS:\t %.0f\n", float64(recvCount)/report.RecvLastTime.Seconds())
+		fmt.Println("  QType:")
+		fmt.Println("    Answer:\t", report.RecvAnsCount.Load())
+		fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount.Load())
+		fmt.Println("    Timeout:\t", report.TimeoutCount.Load())
+		fmt.Println("    Other:\t", report.OtherCount.Load())
 	}
-	fmt.Printf("  Recv TPS:\t %.0f\n", float64(recvCount)/report.RecvLastTime.Seconds())
-	fmt.Println("  QType:")
-	fmt.Println("    Answer:\t", report.RecvAnsCount.Load())
-	fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount.Load())
-	fmt.Println("    Timeout:\t", report.TimeoutCount.Load())
-	fmt.Println("    Other:\t", report.OtherCount.Load())
 }

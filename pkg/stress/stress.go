@@ -8,12 +8,16 @@ import (
 )
 
 type Bomb struct {
-	Concurrency  int
-	TotalRequest int
-	Method       string
-	Domains      []string
-	DomainQType  []string
-	LastTimeout  time.Duration
+	Concurrency   int
+	TotalRequest  int
+	Method        string
+	Domains       []string
+	DomainQType   []string
+	LastTimeout   time.Duration
+	FakeIF        string // interface for fake
+	FakeIP        string // for dns - class b
+	FakeSourceMac string // for dns - class b
+	FakeTargetMac string // for dns - class b
 }
 
 type StressReport struct {
