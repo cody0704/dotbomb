@@ -88,7 +88,7 @@ func main() {
 	case "all":
 		log.Println("Mode:", mode, "(DNS + DNSSEC + DoT + DoH)")
 		log.Printf("DNS: %s:53, DNSSEC: %s:53, DoT: %s:853", requestIP, requestIP, requestIP)
-		dohServer := fmt.Sprintf("https://%s:443/dns-query{?dns}", requestIP)
+		dohServer := fmt.Sprintf("https://%s:443/dns-query", requestIP)
 		log.Println("DoH:", dohServer, "(POST)")
 		bomb.Method = "POST"
 
@@ -113,14 +113,15 @@ func main() {
 		go bomb.DoT(ctx, limiter, requestIP, requestPort)
 	case "doh":
 		log.Println("Mode:", mode, "Method: POST")
-		server := fmt.Sprintf("https://%s:%d/dns-query{?dns}", requestIP, requestPort)
+		server := fmt.Sprintf("https://%s:%d/dns-query", requestIP, requestPort)
 		log.Println("DoH Server: ", server)
 		bomb.Method = "POST"
 
 		go bomb.DoH(ctx, limiter, server)
 	case "dohg":
 		log.Println("Mode:", mode, "Method: GET")
-		server := fmt.Sprintf("https://%s:%d/dns-query", requestIP, requestPort)
+		// routedns DoH GET 要求 URI template — {?dns} 會被展開成 ?dns=<base64>.
+		server := fmt.Sprintf("https://%s:%d/dns-query{?dns}", requestIP, requestPort)
 		log.Println("DoH Server: ", server)
 		bomb.Method = "GET"
 
