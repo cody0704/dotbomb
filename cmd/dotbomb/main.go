@@ -21,9 +21,11 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	var bomb = stress.Bomb{
-		Concurrency:  concurrency,
-		TotalRequest: totalRequest,
-		LastTimeout:  time.Second * time.Duration(timeout),
+		Concurrency:    concurrency,
+		TotalRequest:   totalRequest,
+		LastTimeout:    time.Second * time.Duration(timeout),
+		IgnoreResponse: ignoreResponse,
+		Inflight:       inflight,
 		// Fake
 		FakeIF:        fakeIF,
 		FakeIP:        fakeIP,
@@ -68,17 +70,32 @@ func main() {
 
 	t1 := time.Now() // get current time
 
-	// TPS 限制
+	// TPS 限制. burst = concurrency 讓 worker 不會在 limiter mutex 上排隊;
+	// 平均速率仍由 rate.Limit 決定.
 	var ctx = context.Background()
-	limiter := rate.NewLimiter(rate.Limit(interval), 1)
+	limiter := rate.NewLimiter(rate.Limit(interval), max(1, concurrency))
+
+	// Expected 是 recv 端要累積的「成果數」(Ans/NoAns/Timeout/Other 加總),
+	// 同時也是 SignalDone 的觸發門檻. 單 mode = C*T; -m all 因為四個 protocol
+	// 都把計數寫進同一個 singleton Result, 所以 Expected = 4*C*T.
+	statusN := 1
+	if mode == "all" {
+		statusN = 4
+	}
+	bomb.Expected = uint64(statusN * concurrency * totalRequest)
 
 	switch mode {
 	case "all":
-		log.Println("Mode:", mode)
+		log.Println("Mode:", mode, "(DNS + DNSSEC + DoT + DoH)")
+		log.Printf("DNS: %s:53, DNSSEC: %s:53, DoT: %s:853", requestIP, requestIP, requestIP)
+		dohServer := fmt.Sprintf("https://%s:443/dns-query{?dns}", requestIP)
+		log.Println("DoH:", dohServer, "(POST)")
+		bomb.Method = "POST"
 
-		go bomb.DNSSEC(ctx, limiter, requestIP, 53)
 		go bomb.DNS(ctx, limiter, requestIP, 53)
+		go bomb.DNSSEC(ctx, limiter, requestIP, 53)
 		go bomb.DoT(ctx, limiter, requestIP, 853)
+		go bomb.DoH(ctx, limiter, dohServer)
 	case "dnssec":
 		log.Println("Mode:", mode)
 		log.Printf("DNS Server: %s:%d", requestIP, requestPort)
@@ -110,12 +127,20 @@ func main() {
 		go bomb.DoH(ctx, limiter, server)
 	}
 
-	select {
-	case <-sigChan:
-		report(t1, &stress.Result, 2)
-	case status := <-stress.StatusChan:
-		report(t1, &stress.Result, status)
+	// 收 N 個 status; 取最差 (timeout > finish) 當整體狀態.
+	combined := 0
+	for range statusN {
+		select {
+		case <-sigChan:
+			report(t1, &stress.Result, 2)
+			return
+		case s := <-stress.StatusChan:
+			if s > combined {
+				combined = s
+			}
+		}
 	}
+	report(t1, &stress.Result, combined)
 }
 
 func report(t1 time.Time, report *stress.StressReport, status int) {
@@ -132,26 +157,36 @@ func report(t1 time.Time, report *stress.StressReport, status int) {
 	}
 
 	fmt.Println("======================================================")
-	fmt.Println("Send:\t\t", report.SendCount.Load())
-	fmt.Printf("  LastTime:\t %.6fs\n", report.SendLastTime.Seconds())
-	fmt.Printf("  AvgTime:\t %.6fs\n", report.SendLastTime.Seconds()/float64(report.SendCount.Load()))
-	fmt.Printf("  Send TPS:\t %.0f\n", float64(report.SendCount.Load())/report.SendLastTime.Seconds())
+	sendCount := report.SendCount.Load()
+	sendLast := time.Duration(report.SendLastTime.Load())
+	fmt.Println("Send:\t\t", sendCount)
+	fmt.Printf("  LastTime:\t %.6fs\n", sendLast.Seconds())
+	sendAvgTime := sendLast.Seconds() / float64(sendCount)
+	if math.IsNaN(sendAvgTime) || math.IsInf(sendAvgTime, 0) {
+		fmt.Println("  AvgTime:\t 0.000000s")
+	} else {
+		fmt.Printf("  AvgTime:\t %.6fs\n", sendAvgTime)
+	}
+	fmt.Printf("  Send TPS:\t %.0f\n", float64(sendCount)/sendLast.Seconds())
+
+	if fakeIF != "" || ignoreResponse {
+		return
+	}
 
 	recvCount := report.RecvAnsCount.Load() + report.RecvNoAnsCount.Load()
-	if fakeIF == "" {
-		fmt.Println("Recv:\t\t", recvCount)
-		fmt.Printf("  LastTime:\t %.6fs\n", report.RecvLastTime.Seconds())
-		recvAvgTime := report.RecvLastTime.Seconds() / float64(recvCount)
-		if math.IsNaN(recvAvgTime) || math.IsInf(recvAvgTime, 0) {
-			fmt.Println("  AvgTime:\t 0.000000s")
-		} else {
-			fmt.Printf("  AvgTime:\t %.6fs\n", recvAvgTime)
-		}
-		fmt.Printf("  Recv TPS:\t %.0f\n", float64(recvCount)/report.RecvLastTime.Seconds())
-		fmt.Println("  QType:")
-		fmt.Println("    Answer:\t", report.RecvAnsCount.Load())
-		fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount.Load())
-		fmt.Println("    Timeout:\t", report.TimeoutCount.Load())
-		fmt.Println("    Other:\t", report.OtherCount.Load())
+	recvLast := time.Duration(report.RecvLastTime.Load())
+	fmt.Println("Recv:\t\t", recvCount)
+	fmt.Printf("  LastTime:\t %.6fs\n", recvLast.Seconds())
+	recvAvgTime := recvLast.Seconds() / float64(recvCount)
+	if math.IsNaN(recvAvgTime) || math.IsInf(recvAvgTime, 0) {
+		fmt.Println("  AvgTime:\t 0.000000s")
+	} else {
+		fmt.Printf("  AvgTime:\t %.6fs\n", recvAvgTime)
 	}
+	fmt.Printf("  Recv TPS:\t %.0f\n", float64(recvCount)/recvLast.Seconds())
+	fmt.Println("  QType:")
+	fmt.Println("    Answer:\t", report.RecvAnsCount.Load())
+	fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount.Load())
+	fmt.Println("    Timeout:\t", report.TimeoutCount.Load())
+	fmt.Println("    Other:\t", report.OtherCount.Load())
 }

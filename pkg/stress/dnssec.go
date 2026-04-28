@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/miekg/dns"
@@ -17,6 +16,7 @@ func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP stri
 	defer timeout.Stop()
 
 	var domainCount = len(b.Domains)
+	expected := b.Expected
 
 	t1 := time.Now() // get current time
 	for range b.Concurrency {
@@ -60,7 +60,7 @@ func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP stri
 				dnsPacket, _ := q.Pack()
 
 				conn.Write(dnsPacket)
-				Result.SendLastTime = time.Since(t1)
+				Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
 				Result.SendCount.Add(1)
 
 				limiter.Wait(ctx)
@@ -69,7 +69,7 @@ func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP stri
 
 		go func(conn *net.UDPConn) {
 			for {
-				var incoming [1024]byte
+				var incoming [4096]byte
 				var dnsReply dns.Msg
 				n, err := conn.Read(incoming[:])
 				if err != nil {
@@ -78,42 +78,29 @@ func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP stri
 					// StressChannel <- fmt.Sprintf("%d close", count)
 					break
 				}
-				Result.RecvLastTime = time.Since(t1)
+				Result.RecvLastTime.Store(time.Since(t1).Nanoseconds())
 
 				err = dnsReply.Unpack(incoming[:n])
 				if err != nil {
 					log.Println("recv dns msg err", err)
 				}
 
-				answers := dnsReply.Answer
-				if len(answers) > 0 {
-					switch len(strings.Split(answers[0].String(), "\t")) {
-					case 5:
-						Result.RecvAnsCount.Add(1)
-					default:
-						Result.RecvNoAnsCount.Add(1)
-					}
+				if len(dnsReply.Answer) > 0 {
+					Result.RecvAnsCount.Add(1)
 				} else {
 					Result.RecvNoAnsCount.Add(1)
 				}
 
+				Result.MaybeSignalDone(expected)
 				timeout.Reset(b.LastTimeout)
 			}
 		}(conn)
 	}
 
-	for {
-		select {
-		case <-timeout.C:
-			StatusChan <- 1
-			return
-		default:
-			if int(Result.RecvNoAnsCount.Load()+Result.RecvAnsCount.Load()) == b.Concurrency*b.TotalRequest {
-				StatusChan <- 0
-				return
-			}
-		}
-
-		time.Sleep(1 * time.Second)
+	select {
+	case <-DoneChan:
+		StatusChan <- 0
+	case <-timeout.C:
+		StatusChan <- 1
 	}
 }

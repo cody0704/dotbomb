@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/gopacket/gopacket"
@@ -20,9 +20,15 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 	defer timeout.Stop()
 
 	var domainCount = len(b.Domains)
+	expected := b.Expected
+	sendDriven := b.IgnoreResponse || b.FakeIF != ""
+
+	// fakeWG fires SignalDone when all fake workers have exited, so a setup
+	// failure (bad interface, bad MAC) doesn't leave main hanging on DoneChan.
+	var fakeWG sync.WaitGroup
 
 	t1 := time.Now() // get current time
-	for range b.Concurrency {
+	for workerID := range b.Concurrency {
 		if b.FakeIF == "" {
 			// 創建一個本地地址，使用端口 0，會自動分配一個可用端口
 			laddr, err := net.ResolveUDPAddr("udp", ":0")
@@ -53,16 +59,22 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 					dnsPacket, _ := q.Pack()
 
 					conn.Write(dnsPacket)
-					Result.SendLastTime = time.Since(t1)
-					Result.SendCount.Add(1)
+					Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
+					if Result.SendCount.Add(1) >= expected && sendDriven {
+						SignalDone()
+					}
 
 					limiter.Wait(ctx)
 				}
 			}()
 
+			if b.IgnoreResponse {
+				continue
+			}
+
 			go func(conn *net.UDPConn) {
 				for {
-					var incoming [1024]byte
+					var incoming [4096]byte
 					var dnsReply dns.Msg
 					n, err := conn.Read(incoming[:])
 					if err != nil {
@@ -71,134 +83,155 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 						// StressChannel <- fmt.Sprintf("%d close", count)
 						break
 					}
-					Result.RecvLastTime = time.Since(t1)
+					Result.RecvLastTime.Store(time.Since(t1).Nanoseconds())
 
 					err = dnsReply.Unpack(incoming[:n])
 					if err != nil {
 						log.Println("recv dns msg err", err)
 					}
 
-					answers := dnsReply.Answer
-					if len(answers) > 0 {
-						switch len(strings.Split(answers[0].String(), "\t")) {
-						case 5:
-							Result.RecvAnsCount.Add(1)
-						default:
-							Result.RecvNoAnsCount.Add(1)
-						}
+					if len(dnsReply.Answer) > 0 {
+						Result.RecvAnsCount.Add(1)
 					} else {
 						Result.RecvNoAnsCount.Add(1)
 					}
 
+					Result.MaybeSignalDone(expected)
 					timeout.Reset(b.LastTimeout)
 				}
 			}(conn)
 		} else {
-			// 打開網路介面
-			handle, err := pcap.OpenLive(b.FakeIF, 65535, true, pcap.BlockForever)
-			if err != nil {
-				log.Fatalf("Error opening device %s: %v", b.FakeIF, err)
-				return
-			}
-			defer handle.Close()
-
-			srcMAC, err := net.ParseMAC(b.FakeSourceMac)
-			if err != nil {
-				log.Fatal(err)
-			}
-			dstMAC, err := net.ParseMAC(b.FakeTargetMac)
-			if err != nil {
-				log.Fatal(err)
-			}
-			// 建立 Ethernet II frame
-			ethernet := layers.Ethernet{
-				SrcMAC:       srcMAC,
-				DstMAC:       dstMAC,
-				EthernetType: layers.EthernetTypeIPv4,
-			}
-
-			// 建立封包
-			buffer := gopacket.NewSerializeBuffer()
-			options := gopacket.SerializeOptions{
-				ComputeChecksums: true,
-				FixLengths:       true,
-			}
-
-			// 建立 IP 層
-			ip := layers.IPv4{
-				DstIP:    net.ParseIP(requestIP),
-				Version:  4,
-				TTL:      64,
-				Protocol: layers.IPProtocolUDP,
-			}
-
-			// 建立 UDP 層
-			udp := layers.UDP{
-				DstPort: layers.UDPPort(requestPort),
-			}
-
-			ipv4 := net.ParseIP(b.FakeIP).To4()
-
-			// Build a query
-			q := new(dns.Msg)
-
-			for i := range b.TotalRequest {
-				domain := b.Domains[i%domainCount]
-				qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
-
-				q.SetQuestion(domain, qtype)
-
-				dnsPacket, _ := q.Pack()
-
-				// 發送封包
-				if i%65535 == 0 {
-					ipv4 = net.ParseIP(b.FakeIP).To4()
-				}
-
-				nextIPv4(ipv4)
-
-				ip.SrcIP = ipv4
-				udp.SrcPort = layers.UDPPort(i%50000 + 3000)
-
-				if ip.SrcIP.Equal(ip.DstIP) {
-					nextIPv4(ipv4)
-				}
-
-				udp.SetNetworkLayerForChecksum(&ip)
-
-				gopacket.SerializeLayers(buffer, options, &ethernet, &ip, &udp, gopacket.Payload(dnsPacket))
-				outgoingPacket := buffer.Bytes()
-
-				err = handle.WritePacketData(outgoingPacket)
+			fakeWG.Add(1)
+			go func(workerID int) {
+				defer fakeWG.Done()
+				// 打開網路介面
+				handle, err := pcap.OpenLive(b.FakeIF, 65535, true, pcap.BlockForever)
 				if err != nil {
-					fmt.Println("Error sending packet:", err)
+					log.Printf("worker %d: pcap open %s: %v", workerID, b.FakeIF, err)
+					return
+				}
+				defer handle.Close()
+
+				srcMAC, err := net.ParseMAC(b.FakeSourceMac)
+				if err != nil {
+					log.Printf("worker %d: parse src MAC: %v", workerID, err)
+					return
+				}
+				dstMAC, err := net.ParseMAC(b.FakeTargetMac)
+				if err != nil {
+					log.Printf("worker %d: parse dst MAC: %v", workerID, err)
+					return
+				}
+				// 建立 Ethernet II frame
+				ethernet := layers.Ethernet{
+					SrcMAC:       srcMAC,
+					DstMAC:       dstMAC,
+					EthernetType: layers.EthernetTypeIPv4,
 				}
 
-				Result.SendLastTime = time.Since(t1)
-				Result.SendCount.Add(1)
+				// 建立封包
+				buffer := gopacket.NewSerializeBuffer()
+				options := gopacket.SerializeOptions{
+					ComputeChecksums: true,
+					FixLengths:       true,
+				}
 
-				limiter.Wait(ctx)
-			}
+				// 建立 IP 層
+				ip := layers.IPv4{
+					DstIP:    net.ParseIP(requestIP),
+					Version:  4,
+					TTL:      64,
+					Protocol: layers.IPProtocolUDP,
+				}
 
-			// 關閉封包
-			StatusChan <- 0
+				// 建立 UDP 層
+				udp := layers.UDP{
+					DstPort: layers.UDPPort(requestPort),
+				}
+
+				ipv4 := startingFakeIP(b.FakeIP, workerID)
+
+				// Build a query
+				q := new(dns.Msg)
+
+				for i := range b.TotalRequest {
+					domain := b.Domains[i%domainCount]
+					qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
+
+					q.SetQuestion(domain, qtype)
+
+					dnsPacket, _ := q.Pack()
+
+					// 發送封包
+					if i%65535 == 0 {
+						ipv4 = startingFakeIP(b.FakeIP, workerID)
+					}
+
+					nextIPv4(ipv4)
+
+					ip.SrcIP = ipv4
+					udp.SrcPort = layers.UDPPort(i%50000 + 3000)
+
+					if ip.SrcIP.Equal(ip.DstIP) {
+						nextIPv4(ipv4)
+					}
+
+					udp.SetNetworkLayerForChecksum(&ip)
+
+					gopacket.SerializeLayers(buffer, options, &ethernet, &ip, &udp, gopacket.Payload(dnsPacket))
+					outgoingPacket := buffer.Bytes()
+
+					err = handle.WritePacketData(outgoingPacket)
+					if err != nil {
+						fmt.Println("Error sending packet:", err)
+					}
+
+					Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
+					if Result.SendCount.Add(1) >= expected {
+						SignalDone()
+					}
+
+					limiter.Wait(ctx)
+				}
+			}(workerID)
 		}
 	}
 
-	for {
-		select {
-		case <-timeout.C:
-			StatusChan <- 1
-			return
-		default:
-			if int(Result.RecvNoAnsCount.Load()+Result.RecvAnsCount.Load()) == b.Concurrency*b.TotalRequest {
-				StatusChan <- 0
-				return
-			}
-		}
-
-		time.Sleep(1 * time.Second)
+	// 若所有 fake worker 都提早返回（pcap/MAC 設定錯誤），這個 goroutine
+	// 會送出 DoneChan，避免 main 卡在 <-DoneChan. 只在 fake 模式啟動 — 非 fake
+	// 模式 fakeWG 計數為 0，Wait 會立刻返回造成過早 SignalDone.
+	if b.FakeIF != "" {
+		go func() {
+			fakeWG.Wait()
+			SignalDone()
+		}()
 	}
+
+	if sendDriven {
+		<-DoneChan
+		StatusChan <- 0
+		return
+	}
+
+	select {
+	case <-DoneChan:
+		StatusChan <- 0
+	case <-timeout.C:
+		StatusChan <- 1
+	}
+}
+
+// startingFakeIP returns FakeIP with byte 2 advanced by workerID so each fake
+// worker rotates through a disjoint /16-ish slice of the source-IP space.
+// Wraps within 1..253 to avoid 0/255 (network/broadcast) and the 254 plateau
+// where nextIPv4 stops advancing.
+func startingFakeIP(fakeIP string, workerID int) net.IP {
+	ip := net.ParseIP(fakeIP).To4()
+	if ip == nil {
+		return ip
+	}
+	ip[2] = byte(1 + (int(ip[2])-1+workerID)%253)
+	return ip
 }
 
 func nextIPv4(ip net.IP) {
