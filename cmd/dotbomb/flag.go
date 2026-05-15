@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
 )
 
@@ -45,8 +46,8 @@ func init() {
 	// Make
 	flag.StringVar(&fakeIF, "finet", "", "fake interface")
 	flag.StringVar(&fakeIP, "fip", "", "fake ip address")
-	flag.StringVar(&fakeSourceMac, "fsmac", "", "fake source mac address")
-	flag.StringVar(&fakeTargetMac, "fdmac", "", "fake target mac address")
+	flag.StringVar(&fakeSourceMac, "fsmac", "", "fake source mac address (default: -finet interface MAC)")
+	flag.StringVar(&fakeTargetMac, "fdmac", "", "fake target mac address (default: -finet interface MAC; same-MAC frame is dropped at switch via split-horizon — good for self-target capture without upstream pollution)")
 
 	flag.Parse()
 
@@ -57,9 +58,31 @@ func init() {
 
 	// check fake
 	if fakeIF != "" {
-		if fakeIP == "" || fakeSourceMac == "" || fakeTargetMac == "" {
-			fmt.Println("Fake need -finet -fip -fsmac -fdmac")
+		if fakeIP == "" {
+			fmt.Println("Fake need -finet -fip; -fsmac/-fdmac default to interface MAC")
 			os.Exit(0)
+		}
+		// Auto-fill MACs from the interface when not explicitly set. Defaulting
+		// both to the interface's own MAC means the switch sees DstMAC on the
+		// same port it learned from and drops via split-horizon — frames don't
+		// pollute upstream, but tcpdump on the interface still captures TX.
+		// For upstream targets, set -fdmac to the gateway MAC explicitly.
+		if fakeSourceMac == "" || fakeTargetMac == "" {
+			iface, err := net.InterfaceByName(fakeIF)
+			if err != nil {
+				fmt.Printf("Fake -finet %q lookup failed: %v\n", fakeIF, err)
+				os.Exit(1)
+			}
+			if len(iface.HardwareAddr) == 0 {
+				fmt.Printf("Fake -finet %q has no MAC; -fsmac/-fdmac required\n", fakeIF)
+				os.Exit(1)
+			}
+			if fakeSourceMac == "" {
+				fakeSourceMac = iface.HardwareAddr.String()
+			}
+			if fakeTargetMac == "" {
+				fakeTargetMac = iface.HardwareAddr.String()
+			}
 		}
 	} else if concurrency == 0 || totalRequest == 0 || requestIP == "" || mode == "" {
 		fmt.Println("Example: dotbomb -m dot -c 10 -n 100 -r 8.8.8.8 -p 853 -f domains.txt")
