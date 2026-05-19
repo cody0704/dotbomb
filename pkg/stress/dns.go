@@ -23,6 +23,16 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 	expected := b.Expected
 	sendDriven := b.IgnoreResponse || b.FakeIF != ""
 
+	// Pre-pack queries to avoid Pack() overhead in the hot loop
+	prePacked := make([][]byte, domainCount)
+	for i := range domainCount {
+		q := new(dns.Msg)
+		qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
+		q.SetQuestion(b.Domains[i], qtype)
+		packed, _ := q.Pack()
+		prePacked[i] = packed
+	}
+
 	// fakeWG fires SignalDone when all fake workers have exited, so a setup
 	// failure (bad interface, bad MAC) doesn't leave main hanging on DoneChan.
 	var fakeWG sync.WaitGroup
@@ -47,24 +57,33 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 			conn.SetReadBuffer(256 * 1024 * 1024)
 
 			go func() {
-				// Build a query
-				q := new(dns.Msg)
+				const batchSize = 100
+				var localSend uint64
+				for i := 0; i < b.TotalRequest; i += batchSize {
+					count := batchSize
+					if i+count > b.TotalRequest {
+						count = b.TotalRequest - i
+					}
 
-				for i := range b.TotalRequest {
-					domain := b.Domains[i%domainCount]
-					qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
+					for j := 0; j < count; j++ {
+						idx := (i + j) % domainCount
+						dnsPacket := prePacked[idx]
 
-					q.SetQuestion(domain, qtype)
+						// Update Message ID to be unique per packet
+						// (Optional: for stress testing, sometimes it's okay to reuse ID,
+						// but better to have it unique for correct RTT/match tracking)
+						// dnsPacket[0], dnsPacket[1] = byte(id>>8), byte(id&0xff)
 
-					dnsPacket, _ := q.Pack()
+						conn.Write(dnsPacket)
+						localSend++
+					}
 
-					conn.Write(dnsPacket)
 					Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
-					if Result.SendCount.Add(1) >= expected && sendDriven {
+					if Result.SendCount.Add(uint64(count)) >= expected && sendDriven {
 						SignalDone()
 					}
 
-					limiter.Wait(ctx)
+					limiter.WaitN(ctx, count)
 				}
 			}()
 
@@ -73,32 +92,56 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 			}
 
 			go func(conn *net.UDPConn) {
+				const flushThreshold = 500
+				var localAns, localNoAns, localProcessed uint64
+				lastReset := time.Now()
+
 				for {
-					var incoming [4096]byte
-					var dnsReply dns.Msg
-					n, err := conn.Read(incoming[:])
+					bufPtr := bufPool.Get().(*[]byte)
+					incoming := *bufPtr
+
+					n, err := conn.Read(incoming)
 					if err != nil {
+						bufPool.Put(bufPtr)
 						log.Println("recv dns err", err)
 						Result.StopSockCount.Add(1)
-						// StressChannel <- fmt.Sprintf("%d close", count)
 						break
 					}
 					Result.RecvLastTime.Store(time.Since(t1).Nanoseconds())
 
+					var dnsReply dns.Msg
 					err = dnsReply.Unpack(incoming[:n])
+					bufPool.Put(bufPtr)
+
 					if err != nil {
 						log.Println("recv dns msg err", err)
 					}
 
 					if len(dnsReply.Answer) > 0 {
-						Result.RecvAnsCount.Add(1)
+						localAns++
 					} else {
-						Result.RecvNoAnsCount.Add(1)
+						localNoAns++
 					}
+					localProcessed++
 
-					Result.MaybeSignalDone(expected)
-					timeout.Reset(b.LastTimeout)
+					// Flush local counters to global atomic and check completion periodically
+					if localProcessed >= flushThreshold {
+						Result.RecvAnsCount.Add(localAns)
+						Result.RecvNoAnsCount.Add(localNoAns)
+						Result.MaybeSignalDone(expected)
+						localAns, localNoAns, localProcessed = 0, 0, 0
+
+						// Throttled timer reset to avoid lock contention
+						if time.Since(lastReset) > 100*time.Millisecond {
+							timeout.Reset(b.LastTimeout)
+							lastReset = time.Now()
+						}
+					}
 				}
+				// Final flush
+				Result.RecvAnsCount.Add(localAns)
+				Result.RecvNoAnsCount.Add(localNoAns)
+				Result.MaybeSignalDone(expected)
 			}(conn)
 		} else {
 			fakeWG.Add(1)
@@ -151,47 +194,49 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 
 				ipv4 := startingFakeIP(b.FakeIP, workerID)
 
-				// Build a query
-				q := new(dns.Msg)
-
-				for i := range b.TotalRequest {
-					domain := b.Domains[i%domainCount]
-					qtype := QType[b.DomainQType[i%len(b.DomainQType)]]
-
-					q.SetQuestion(domain, qtype)
-
-					dnsPacket, _ := q.Pack()
-
-					// 發送封包
-					if i%65535 == 0 {
-						ipv4 = startingFakeIP(b.FakeIP, workerID)
+				const batchSize = 100
+				for i := 0; i < b.TotalRequest; i += batchSize {
+					count := batchSize
+					if i+count > b.TotalRequest {
+						count = b.TotalRequest - i
 					}
 
-					nextIPv4(ipv4)
+					for j := 0; j < count; j++ {
+						curr := i + j
+						idx := curr % domainCount
+						dnsPacket := prePacked[idx]
 
-					ip.SrcIP = ipv4
-					udp.SrcPort = layers.UDPPort(i%50000 + 3000)
+						// 發送封包
+						if curr%65535 == 0 {
+							ipv4 = startingFakeIP(b.FakeIP, workerID)
+						}
 
-					if ip.SrcIP.Equal(ip.DstIP) {
 						nextIPv4(ipv4)
-					}
 
-					udp.SetNetworkLayerForChecksum(&ip)
+						ip.SrcIP = ipv4
+						udp.SrcPort = layers.UDPPort(curr%50000 + 3000)
 
-					gopacket.SerializeLayers(buffer, options, &ethernet, &ip, &udp, gopacket.Payload(dnsPacket))
-					outgoingPacket := buffer.Bytes()
+						if ip.SrcIP.Equal(ip.DstIP) {
+							nextIPv4(ipv4)
+						}
 
-					err = handle.WritePacketData(outgoingPacket)
-					if err != nil {
-						fmt.Println("Error sending packet:", err)
+						udp.SetNetworkLayerForChecksum(&ip)
+
+						gopacket.SerializeLayers(buffer, options, &ethernet, &ip, &udp, gopacket.Payload(dnsPacket))
+						outgoingPacket := buffer.Bytes()
+
+						err = handle.WritePacketData(outgoingPacket)
+						if err != nil {
+							fmt.Println("Error sending packet:", err)
+						}
 					}
 
 					Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
-					if Result.SendCount.Add(1) >= expected {
+					if Result.SendCount.Add(uint64(count)) >= expected {
 						SignalDone()
 					}
 
-					limiter.Wait(ctx)
+					limiter.WaitN(ctx, count)
 				}
 			}(workerID)
 		}

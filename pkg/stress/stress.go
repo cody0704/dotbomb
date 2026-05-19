@@ -76,6 +76,13 @@ var StatusChan = make(chan int, 4)
 var DoneChan = make(chan struct{})
 var doneOnce sync.Once
 
+var bufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 4096)
+		return &b
+	},
+}
+
 func SignalDone() {
 	doneOnce.Do(func() { close(DoneChan) })
 }
