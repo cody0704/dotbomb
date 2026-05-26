@@ -64,6 +64,12 @@ func (r *StressReport) MaybeSignalDone(expected uint64) {
 	}
 }
 
+// MaxBatch is the largest n any protocol passes to rate.Limiter.WaitN.
+// main uses it as a burst floor — rate.Limiter.WaitN(n) returns immediately
+// with an error when n > burst, which silently bypasses the TPS limit.
+// Keep this >= every batchSize constant in dns.go / dnssec.go / dot.go / doh.go.
+const MaxBatch = 100
+
 var Result StressReport
 
 // StatusChan capacity is 4 so -m all (DNS+DNSSEC+DoT+DoH, four protocol
