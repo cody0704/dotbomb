@@ -37,9 +37,11 @@ For maximum UDP throughput, **run on Linux**: plain DNS/DNSSEC sends are batched
 one `sendmmsg` syscall per group of packets. macOS, Windows and BSD transparently fall
 back to per-packet sends (correct, just without the syscall batching). The receive path
 reads the reply's ANCOUNT field directly instead of fully parsing each packet, avoiding
-per-packet allocations under load. Throughput is still ultimately bounded by `-tps`,
-your NIC, and the target — raise `-c`, `-tps`, and (for DoT/DoH) `-inflight` to push
-harder.
+per-packet allocations under load. The fake-source path pre-builds each frame once and
+only patches the source IP/port + IPv4 checksum per packet (UDP checksum left 0), so
+spoofed sends are ~9× cheaper to construct. Throughput is still ultimately bounded by
+`-tps`, your NIC, and the target — raise `-c`, `-tps`, and (for DoT/DoH) `-inflight` to
+push harder.
 
 ## Flags
 

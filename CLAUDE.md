@@ -132,11 +132,17 @@ expensive). DNS has two send paths selected by `b.FakeIF`:
   the returned count and ends up sending one packet per iteration. A WriteBatch error
   falls back to plain `conn.Write` for the remainder. A separate receive goroutine runs
   `drainUDPReplies`.
-- **Fake source** (`-finet`): each worker owns a pcap handle and serializes spoofed
-  Ethernet+IPv4+UDP frames, rotating the source IP via `startingFakeIP`/`nextIPv4`
-  (byte 2 offset by workerID to avoid worker collisions). No replies are read; the run
-  is send-driven. A `fakeWG` watcher calls `SignalDone` if all fake workers exit early
-  (bad interface/MAC) so `main` never hangs.
+- **Fake source** (`-finet`): one complete Ethernet+IPv4+UDP frame per query is built
+  once via gopacket (`buildFakeFrames` in `fakesend.go`); each worker owns a pcap
+  handle and, per packet, only patches the source IP, source port and IPv4 checksum
+  into a scratch buffer (`patchFakeFrame`) — no re-serialize, and the UDP checksum is
+  left 0 (legal for IPv4), so the payload isn't re-checksummed. ~9× cheaper per packet
+  (`BenchmarkFakeSerializeOld` vs `BenchmarkFakePatchNew`). The source IP rotates via
+  `startingFakeIP`/`nextIPv4` (byte 2 offset by workerID to avoid worker collisions).
+  No replies are read; the run is send-driven. A `fakeWG` watcher calls `SignalDone` if
+  all fake workers exit early (bad interface/MAC) so `main` never hangs. MAC/IP parsing
+  and frame building happen once before the worker loop; a setup error skips launching
+  any fake worker.
 
 DoT/DoH reuse a single routedns client per worker and fan out `inflight` inner
 goroutines over it — DoT pipelines on one TLS connection, DoH multiplexes via HTTP/2.
