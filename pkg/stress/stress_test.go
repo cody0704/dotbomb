@@ -92,21 +92,3 @@ func BenchmarkNewWay(b *testing.B) {
 		count.Add(uint64(iterations))
 	}
 }
-
-// BenchmarkBufferAlloc measures the cost of allocating a buffer vs sync.Pool
-func BenchmarkBufferAlloc(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		buf := make([]byte, 4096)
-		_ = buf
-	}
-}
-
-func BenchmarkBufferPool(b *testing.B) {
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		bufPtr := bufPool.Get().(*[]byte)
-		_ = *bufPtr
-		bufPool.Put(bufPtr)
-	}
-}

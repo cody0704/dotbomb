@@ -90,15 +90,17 @@ shared atomics in batches, to keep atomic contention off the hot path. There is 
 critical asymmetry:
 
 - **UDP (`drainUDPReplies` in `stress.go`, shared by DNS + DNSSEC)** loops on
-  `conn.Read` forever with no natural termination. It flushes on size (`flushSize`)
-  **or** on a read-deadline timeout (`flushInterval`). The time-based flush is
-  essential: a run receiving fewer than `flushSize` replies (the common case) must
-  still publish its tallies and signal completion, otherwise the run stalls until the
-  idle watchdog fires and falsely reports a timeout with zero recv counts. (This was a
-  real regression — see `TestDNSCompletesOnSmallRun`.) When touching this, preserve
-  the size-or-time flush. To decide answered-vs-not it reads the header's ANCOUNT
-  (bytes 6-7) directly rather than `dns.Msg.Unpack` — full parse cost ~167ns and 7
-  allocs per packet, the header read is ~0 allocs (`BenchmarkRecvAncount`).
+  `ipv4.ReadBatch` (one recvmmsg per up-to-`recvBatch` packets on Linux; one packet
+  per call elsewhere — same no-build-tags pattern as the send side) forever, with no
+  natural termination. It flushes on size (`flushSize`) **or** on a read-deadline
+  timeout (`flushInterval`). The time-based flush is essential: a run receiving fewer
+  than `flushSize` replies (the common case) must still publish its tallies and signal
+  completion, otherwise the run stalls until the idle watchdog fires and falsely
+  reports a timeout with zero recv counts. (This was a real regression — see
+  `TestDNSCompletesOnSmallRun`.) When touching this, preserve the size-or-time flush.
+  To decide answered-vs-not it reads each reply's ANCOUNT (bytes 6-7) directly rather
+  than `dns.Msg.Unpack` — full parse cost ~167ns and 7 allocs per packet, the header
+  read is ~0 allocs (`BenchmarkRecvAncount`).
 - **DoT/DoH** issue synchronous request→response per query inside a worker loop that
   *does* terminate after `TotalRequest` iterations, so a guaranteed final flush after
   the loop publishes the last partial batch. They only need a size threshold.

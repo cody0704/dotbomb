@@ -34,9 +34,10 @@ go test -bench . ./pkg/stress/                                 # benchmarks only
 ## Performance notes
 
 For maximum UDP throughput, **run on Linux**: plain DNS/DNSSEC sends are batched into
-one `sendmmsg` syscall per group of packets. macOS, Windows and BSD transparently fall
-back to per-packet sends (correct, just without the syscall batching). The receive path
-reads the reply's ANCOUNT field directly instead of fully parsing each packet, avoiding
+one `sendmmsg` syscall per group of packets, and replies are read with `recvmmsg`
+(batched receives). macOS, Windows and BSD transparently fall back to per-packet
+send/receive (correct, just without the syscall batching). The receive path reads each
+reply's ANCOUNT field directly instead of fully parsing each packet, avoiding
 per-packet allocations under load. The fake-source path pre-builds each frame once and
 only patches the source IP/port + IPv4 checksum per packet (UDP checksum left 0), so
 spoofed sends are ~9× cheaper to construct. Throughput is still ultimately bounded by
