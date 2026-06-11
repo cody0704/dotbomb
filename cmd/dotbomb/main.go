@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/acom-networks/dnsbomb/pkg/stress"
+	"github.com/miekg/dns"
 	"golang.org/x/time/rate"
 )
 
@@ -39,29 +40,33 @@ func main() {
 	}
 
 	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+	for lineNo := 1; scanner.Scan(); lineNo++ {
+		// Fields tolerates extra/tab whitespace between the domain and qtype.
+		parts := strings.Fields(scanner.Text())
+		if len(parts) == 0 {
 			continue
 		}
-
-		parts := strings.Split(line, " ")
 		if len(parts) < 2 {
-			log.Fatal("Invalid domain format in", domainFile, ":", line)
+			log.Fatalf("%s:%d invalid format (need %q): %q", domainFile, lineNo, "<domain.> <QTYPE>", scanner.Text())
 		}
 
-		bomb.Domains = append(bomb.Domains, parts[0])
-		bomb.DomainQType = append(bomb.DomainQType, parts[1])
-	}
+		qtype := strings.ToUpper(parts[1])
+		if _, ok := stress.QType[qtype]; !ok {
+			log.Fatalf("%s:%d unsupported qtype %q (see README for the supported list)", domainFile, lineNo, parts[1])
+		}
 
-	if len(bomb.Domains) == 0 {
-		log.Fatal(domainFile, " does not have any domains")
+		bomb.Domains = append(bomb.Domains, dns.Fqdn(parts[0]))
+		bomb.DomainQType = append(bomb.DomainQType, qtype)
 	}
 
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
 	file.Close()
+
+	if len(bomb.Domains) == 0 {
+		log.Fatal(domainFile, " does not have any domains")
+	}
 
 	log.Println("DoTBomb start stress...")
 	log.Printf("Timeout: %ds", timeout)
@@ -155,7 +160,7 @@ func report(t1 time.Time, report *stress.StressReport, status int) {
 	case 1:
 		fmt.Println("Status:\t\t", "Timeout")
 	case 2:
-		fmt.Println("Status:\t\t", "Cancle")
+		fmt.Println("Status:\t\t", "Cancel")
 	}
 
 	fmt.Println("======================================================")
@@ -163,13 +168,8 @@ func report(t1 time.Time, report *stress.StressReport, status int) {
 	sendLast := time.Duration(report.SendLastTime.Load())
 	fmt.Println("Send:\t\t", sendCount)
 	fmt.Printf("  LastTime:\t %.6fs\n", sendLast.Seconds())
-	sendAvgTime := sendLast.Seconds() / float64(sendCount)
-	if math.IsNaN(sendAvgTime) || math.IsInf(sendAvgTime, 0) {
-		fmt.Println("  AvgTime:\t 0.000000s")
-	} else {
-		fmt.Printf("  AvgTime:\t %.6fs\n", sendAvgTime)
-	}
-	fmt.Printf("  Send TPS:\t %.0f\n", float64(sendCount)/sendLast.Seconds())
+	fmt.Printf("  AvgTime:\t %.6fs\n", safeDiv(sendLast.Seconds(), float64(sendCount)))
+	fmt.Printf("  Send TPS:\t %.0f\n", safeDiv(float64(sendCount), sendLast.Seconds()))
 
 	if fakeIF != "" || ignoreResponse {
 		return
@@ -179,16 +179,20 @@ func report(t1 time.Time, report *stress.StressReport, status int) {
 	recvLast := time.Duration(report.RecvLastTime.Load())
 	fmt.Println("Recv:\t\t", recvCount)
 	fmt.Printf("  LastTime:\t %.6fs\n", recvLast.Seconds())
-	recvAvgTime := recvLast.Seconds() / float64(recvCount)
-	if math.IsNaN(recvAvgTime) || math.IsInf(recvAvgTime, 0) {
-		fmt.Println("  AvgTime:\t 0.000000s")
-	} else {
-		fmt.Printf("  AvgTime:\t %.6fs\n", recvAvgTime)
-	}
-	fmt.Printf("  Recv TPS:\t %.0f\n", float64(recvCount)/recvLast.Seconds())
+	fmt.Printf("  AvgTime:\t %.6fs\n", safeDiv(recvLast.Seconds(), float64(recvCount)))
+	fmt.Printf("  Recv TPS:\t %.0f\n", safeDiv(float64(recvCount), recvLast.Seconds()))
 	fmt.Println("  QType:")
 	fmt.Println("    Answer:\t", report.RecvAnsCount.Load())
 	fmt.Println("    NoAnswer:\t", report.RecvNoAnsCount.Load())
 	fmt.Println("    Timeout:\t", report.TimeoutCount.Load())
 	fmt.Println("    Other:\t", report.OtherCount.Load())
+}
+
+// safeDiv returns a/b, or 0 when the result would be NaN or ±Inf (b == 0, as
+// happens on an empty or instantaneous run). Keeps the report free of "+Inf".
+func safeDiv(a, b float64) float64 {
+	if v := a / b; !math.IsNaN(v) && !math.IsInf(v, 0) {
+		return v
+	}
+	return 0
 }

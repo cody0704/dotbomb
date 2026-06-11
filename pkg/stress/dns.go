@@ -16,9 +16,6 @@ import (
 )
 
 func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string, requestPort int) {
-	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
-	defer timeout.Stop()
-
 	var domainCount = len(b.Domains)
 	expected := b.Expected
 	sendDriven := b.IgnoreResponse || b.FakeIF != ""
@@ -91,58 +88,7 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 				continue
 			}
 
-			go func(conn *net.UDPConn) {
-				const flushThreshold = 500
-				var localAns, localNoAns, localProcessed uint64
-				lastReset := time.Now()
-
-				for {
-					bufPtr := bufPool.Get().(*[]byte)
-					incoming := *bufPtr
-
-					n, err := conn.Read(incoming)
-					if err != nil {
-						bufPool.Put(bufPtr)
-						log.Println("recv dns err", err)
-						Result.StopSockCount.Add(1)
-						break
-					}
-					Result.RecvLastTime.Store(time.Since(t1).Nanoseconds())
-
-					var dnsReply dns.Msg
-					err = dnsReply.Unpack(incoming[:n])
-					bufPool.Put(bufPtr)
-
-					if err != nil {
-						log.Println("recv dns msg err", err)
-					}
-
-					if len(dnsReply.Answer) > 0 {
-						localAns++
-					} else {
-						localNoAns++
-					}
-					localProcessed++
-
-					// Flush local counters to global atomic and check completion periodically
-					if localProcessed >= flushThreshold {
-						Result.RecvAnsCount.Add(localAns)
-						Result.RecvNoAnsCount.Add(localNoAns)
-						Result.MaybeSignalDone(expected)
-						localAns, localNoAns, localProcessed = 0, 0, 0
-
-						// Throttled timer reset to avoid lock contention
-						if time.Since(lastReset) > 100*time.Millisecond {
-							timeout.Reset(b.LastTimeout)
-							lastReset = time.Now()
-						}
-					}
-				}
-				// Final flush
-				Result.RecvAnsCount.Add(localAns)
-				Result.RecvNoAnsCount.Add(localNoAns)
-				Result.MaybeSignalDone(expected)
-			}(conn)
+			go drainUDPReplies(conn, t1, expected)
 		} else {
 			fakeWG.Add(1)
 			go func(workerID int) {
@@ -258,11 +204,10 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 		return
 	}
 
-	select {
-	case <-DoneChan:
-		StatusChan <- 0
-	case <-timeout.C:
+	if watchIdle(DoneChan, b.LastTimeout) {
 		StatusChan <- 1
+	} else {
+		StatusChan <- 0
 	}
 }
 

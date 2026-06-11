@@ -14,8 +14,7 @@ func main() {
 	// 打開網路介面
 	handle, err := pcap.OpenLive("en0", 65535, true, pcap.BlockForever)
 	if err != nil {
-		log.Fatal("Error opening device %v: %v", "en0", err)
-		return
+		log.Fatalf("Error opening device %v: %v", "en0", err)
 	}
 	defer handle.Close()
 

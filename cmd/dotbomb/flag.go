@@ -100,7 +100,7 @@ func init() {
 	}
 
 	switch mode {
-	case "dns", "dot", "doh", "dohg", "dohp", "dnssec", "all":
+	case "dns", "dot", "doh", "dohg", "dnssec", "all":
 	default:
 		fmt.Println("-m [Mode] Default: dot, Option: dot / doh / dohg / dns / dnssec / all")
 		os.Exit(0)

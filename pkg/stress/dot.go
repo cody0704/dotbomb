@@ -15,10 +15,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func (b Bomb) DoT(ctx context.Context, limiter *rate.Limiter, requestIP string, requestPort int) {
-	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
-	defer timeout.Stop()
-
+func (b *Bomb) DoT(ctx context.Context, limiter *rate.Limiter, requestIP string, requestPort int) {
 	config := tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -50,7 +47,6 @@ func (b Bomb) DoT(ctx context.Context, limiter *rate.Limiter, requestIP string, 
 					const batchSize = 10
 					const flushThreshold = 100
 					var localAns, localNoAns, localTimeout, localOther, localProcessed uint64
-					lastReset := time.Now()
 
 					q := new(dns.Msg)
 					for i := slot; i < b.TotalRequest; i += inflight {
@@ -95,11 +91,6 @@ func (b Bomb) DoT(ctx context.Context, limiter *rate.Limiter, requestIP string, 
 							Result.OtherCount.Add(localOther)
 							Result.MaybeSignalDone(expected)
 							localAns, localNoAns, localTimeout, localOther, localProcessed = 0, 0, 0, 0, 0
-
-							if time.Since(lastReset) > 100*time.Millisecond {
-								timeout.Reset(b.LastTimeout)
-								lastReset = time.Now()
-							}
 						}
 					}
 					// Final flush
@@ -114,10 +105,9 @@ func (b Bomb) DoT(ctx context.Context, limiter *rate.Limiter, requestIP string, 
 		}(workerID)
 	}
 
-	select {
-	case <-DoneChan:
-		StatusChan <- 0
-	case <-timeout.C:
+	if watchIdle(DoneChan, b.LastTimeout) {
 		StatusChan <- 1
+	} else {
+		StatusChan <- 0
 	}
 }
