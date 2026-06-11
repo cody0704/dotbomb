@@ -23,6 +23,14 @@ For a plain `go build`:
 go build -o bin/dotbomb ./cmd/dotbomb
 ```
 
+## Test
+
+```bash
+go test ./pkg/stress/                                          # unit tests + benchmarks
+go test -race -run TestDNSCompletesOnSmallRun ./pkg/stress/    # a single test, race-checked
+go test -bench . ./pkg/stress/                                 # benchmarks only
+```
+
 ## Flags
 
 ```
@@ -50,7 +58,7 @@ go build -o bin/dotbomb ./cmd/dotbomb
 
 ## Domain list format
 
-One `domain. QTYPE` per line, separated by a single space:
+One `domain QTYPE` per line:
 
 ```
 google.com. A
@@ -58,6 +66,11 @@ facebook.com. A
 example.com. AAAA
 example.org. MX
 ```
+
+The domain and qtype may be separated by any whitespace (spaces or tabs); blank
+lines are skipped. A trailing dot is added automatically, so `google.com A` and
+`google.com. A` are equivalent. The qtype is case-insensitive and **validated at
+startup** — an unknown qtype aborts the run with the offending line number.
 
 Supported qtypes: `A AAAA CNAME MX NS TXT SRV PTR SOA DNSKEY DS CAA NAPTR TLSA SPF ANY` (see `pkg/stress/stress.go` `QType` map).
 
