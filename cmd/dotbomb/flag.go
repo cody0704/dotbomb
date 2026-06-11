@@ -13,7 +13,7 @@ var (
 	versionID    string = "%VERSION%"
 	version      bool
 	mode         string
-	timeout      int
+	replyWait    int
 	concurrency  int
 	totalRequest int
 	requestIP    string
@@ -39,14 +39,14 @@ var (
 func parseFlags() {
 	flag.BoolVar(&version, "v", false, "number of concurrency")
 	flag.StringVar(&mode, "m", "dot", "dot / doh / dns / dnssec / all")
-	flag.IntVar(&timeout, "t", 1, "request Timeout")
+	flag.IntVar(&replyWait, "wait", 1, "per-query reply timeout in seconds (how long to wait for each answer)")
 	flag.IntVar(&concurrency, "c", 1, "number of concurrency")
 	flag.IntVar(&totalRequest, "n", 1, "number of request")
 	flag.StringVar(&requestIP, "r", "", "dns ip address")
 	flag.IntVar(&requestPort, "p", 0, "dns port")
 	flag.StringVar(&domainFile, "f", "", "domain list file")
 	flag.IntVar(&interval, "tps", 30, "Packet send tps")
-	flag.DurationVar(&duration, "timeout", 0, "total run length like 30s / 5m / 1h (requires -tps; overrides -n; not the per-query -t)")
+	flag.DurationVar(&duration, "timeout", 0, "total run length like 30s / 5m / 1h (requires -tps; overrides -n; not the per-query -wait)")
 	flag.IntVar(&inflight, "inflight", 1, "in-flight queries per DoT/DoH worker (1 = current sequential behavior)")
 	flag.BoolVar(&ignoreResponse, "ignore", false, "ignore DNS query response (dns only); for tapped/mirrored traffic where no reply will arrive")
 
@@ -97,7 +97,7 @@ func parseFlags() {
 		fmt.Println("-tps [TPS] <Number> Default: 30")
 		fmt.Println("-m [Mode] Default: dot, Option: dot / doh (POST) / dohg (GET) / dns / dnssec / all (fan out across DNS+DNSSEC+DoT+DoH)")
 		fmt.Println("-c [Concurrency] <Number>")
-		fmt.Println("-t [Timeout] <Second>")
+		fmt.Println("-wait [Reply timeout] <Second>")
 		fmt.Println("-n [request] <Number>")
 		fmt.Println("-timeout [Run length] like 30s / 5m / 1h (requires -tps; overrides -n)")
 		fmt.Println("-r <Server IP>")

@@ -50,7 +50,7 @@ needs libpcap headers present.
   exposed as `parseFlags()` (called from `main`, not `init()`, so test binaries don't
   trip `flag.Parse` on their own `-test.*` flags). All input validation lives here
   (mode whitelist, fake-mode MAC auto-fill from the interface, `-ignore` only with
-  `-m dns`). Duration mode (`-timeout 5m`, distinct from the per-query `-t`) is sugar:
+  `-m dns`). Duration mode (`-timeout 5m`, distinct from the per-query `-wait`) is sugar:
   `queriesPerWorker` derives `-n` from `tps × duration ÷ (protocols × c)`, so the
   normal count-based run lasts ~`-timeout`; it requires `-tps` (the count can't be
   derived otherwise) and overrides `-n`.
@@ -105,7 +105,7 @@ critical asymmetry:
 
 `watchIdle(done, idle)` (in `stress.go`) is the per-transport timeout. It polls
 `Result.Processed()` and returns `true` only if no progress is made for `idle`
-(= `-t` seconds). This replaced earlier per-goroutine `timer.Reset` calls, which were
+(= `-wait` seconds). This replaced earlier per-goroutine `timer.Reset` calls, which were
 a data race when many receivers reset one shared timer. Send-driven modes
 (`-ignore`, fake) bypass the watchdog entirely and finish on `DoneChan`.
 

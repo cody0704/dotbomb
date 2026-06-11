@@ -41,7 +41,7 @@ go test -bench . ./pkg/stress/                                 # benchmarks only
 -c         number of concurrent workers per mode
 -n         queries per worker
 -timeout   total run length (e.g. 30s, 5m, 1h); requires -tps, overrides -n
--t         per-query timeout (seconds)
+-wait      per-query reply timeout (seconds) — how long to wait for each answer
 -tps       global send rate limit (queries per second across all workers)
 -inflight  in-flight queries per DoT/DoH worker (default 1; lifts per-worker throughput cap)
 -ignore    skip recv goroutine, finish on send completion (dns mode only;
@@ -66,7 +66,7 @@ rate-limited run lasts about `-timeout`. `-timeout` overrides `-n`.
 
 ```bash
 # Hammer 8.8.8.8 at 5000 q/s for 10 minutes
-$ dotbomb -m dns -c 8 -timeout 10m -tps 5000 -t 2 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dns -c 8 -timeout 10m -tps 5000 -wait 2 -r 8.8.8.8 -f domains.txt
 Duration: 10m0s at 5000 tps
 total request: 3000000
 ```
@@ -94,7 +94,7 @@ Supported qtypes: `A AAAA CNAME MX NS TXT SRV PTR SOA DNSKEY DS CAA NAPTR TLSA S
 ### DNS (UDP)
 
 ```bash
-$ dotbomb -m dns -c 4 -n 25 -t 2 -tps 3000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dns -c 4 -n 25 -wait 2 -tps 3000 -r 8.8.8.8 -f domains.txt
 2026/04/28 13:55:16 DoTBomb start stress...
 2026/04/28 13:55:16 Mode: dns
 2026/04/28 13:55:16 DNS Server: 8.8.8.8:53
@@ -121,7 +121,7 @@ Recv:		 100
 ### DoT
 
 ```bash
-$ dotbomb -m dot -c 6 -n 20 -t 3 -tps 6000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dot -c 6 -n 20 -wait 3 -tps 6000 -r 8.8.8.8 -f domains.txt
 Mode: dot
 DNS Server: 8.8.8.8:853
 
@@ -143,18 +143,18 @@ The same DoT client is reused across `inflight` inner goroutines per worker — 
 
 ```bash
 # inflight=1 (default, sequential)
-$ dotbomb -m dot -c 2 -n 40 -t 5 -tps 6000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m dot -c 2 -n 40 -wait 5 -tps 6000 -r 8.8.8.8 -f domains.txt
 Send TPS: 190    Recv TPS: 183
 
 # inflight=8 (multiplexed)
-$ dotbomb -m dot -c 2 -n 40 -t 5 -tps 6000 -r 8.8.8.8 -f domains.txt -inflight 8
+$ dotbomb -m dot -c 2 -n 40 -wait 5 -tps 6000 -r 8.8.8.8 -f domains.txt -inflight 8
 Send TPS: 1111   Recv TPS: 937
 ```
 
 ### DoH (POST)
 
 ```bash
-$ dotbomb -m doh -c 6 -n 10 -t 5 -tps 1000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m doh -c 6 -n 10 -wait 5 -tps 1000 -r 8.8.8.8 -f domains.txt
 Mode: doh Method: POST
 DoH Server: https://8.8.8.8:443/dns-query
 
@@ -173,7 +173,7 @@ Recv:		 60
 ### DoH (GET)
 
 ```bash
-$ dotbomb -m dohg -c 10 -n 5 -t 10 -tps 1000 -r 1.1.1.1 -f domains.txt
+$ dotbomb -m dohg -c 10 -n 5 -wait 10 -tps 1000 -r 1.1.1.1 -f domains.txt
 Mode: dohg Method: GET
 DoH Server: https://1.1.1.1:443/dns-query{?dns}
 
@@ -194,7 +194,7 @@ Recv:		 50
 All four transports run concurrently against the same target. `Send` and `Recv` are combined totals across all four (= `4 × c × n`).
 
 ```bash
-$ dotbomb -m all -c 4 -n 25 -t 5 -tps 3000 -r 8.8.8.8 -f domains.txt
+$ dotbomb -m all -c 4 -n 25 -wait 5 -tps 3000 -r 8.8.8.8 -f domains.txt
 Mode: all (DNS + DNSSEC + DoT + DoH)
 DNS: 8.8.8.8:53, DNSSEC: 8.8.8.8:53, DoT: 8.8.8.8:853
 DoH: https://8.8.8.8:443/dns-query (POST)
@@ -216,7 +216,7 @@ Recv:		 400
 When the test target receives traffic via a tap/mirror and won't reply on the source socket, skip the recv path entirely. Run finishes as soon as all sends are done — no idle-watchdog timeout, no `Recv` block in the report.
 
 ```bash
-$ dotbomb -m dns -c 4 -n 25 -t 2 -tps 3000 -r 10.0.0.5 -f domains.txt -ignore
+$ dotbomb -m dns -c 4 -n 25 -wait 2 -tps 3000 -r 10.0.0.5 -f domains.txt -ignore
 Run Time:	 0.031375s
 Status:		 Finish
 ======================================================

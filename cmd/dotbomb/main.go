@@ -26,7 +26,7 @@ func main() {
 	var bomb = stress.Bomb{
 		Concurrency:    concurrency,
 		TotalRequest:   totalRequest,
-		LastTimeout:    time.Second * time.Duration(timeout),
+		LastTimeout:    time.Second * time.Duration(replyWait),
 		IgnoreResponse: ignoreResponse,
 		Inflight:       inflight,
 		// Fake
@@ -78,7 +78,7 @@ func main() {
 	}
 
 	log.Println("DoTBomb start stress...")
-	log.Printf("Timeout: %ds", timeout)
+	log.Printf("Reply timeout: %ds", replyWait)
 	if duration > 0 {
 		log.Printf("Duration: %s at %d tps", duration, interval)
 	}
