@@ -31,6 +31,16 @@ go test -race -run TestDNSCompletesOnSmallRun ./pkg/stress/    # a single test, 
 go test -bench . ./pkg/stress/                                 # benchmarks only
 ```
 
+## Performance notes
+
+For maximum UDP throughput, **run on Linux**: plain DNS/DNSSEC sends are batched into
+one `sendmmsg` syscall per group of packets. macOS, Windows and BSD transparently fall
+back to per-packet sends (correct, just without the syscall batching). The receive path
+reads the reply's ANCOUNT field directly instead of fully parsing each packet, avoiding
+per-packet allocations under load. Throughput is still ultimately bounded by `-tps`,
+your NIC, and the target — raise `-c`, `-tps`, and (for DoT/DoH) `-inflight` to push
+harder.
+
 ## Flags
 
 ```

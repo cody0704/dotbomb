@@ -1,6 +1,8 @@
 package stress
 
 import (
+	"context"
+	"encoding/binary"
 	"log"
 	"net"
 	"sync"
@@ -8,7 +10,11 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"golang.org/x/time/rate"
 )
+
+// headerLen is the fixed size of a DNS message header (RFC 1035 §4.1.1).
+const headerLen = 12
 
 type Bomb struct {
 	Concurrency  int
@@ -135,14 +141,14 @@ func drainUDPReplies(conn *net.UDPConn, t1 time.Time, expected uint64) {
 		}
 		Result.RecvLastTime.Store(time.Since(t1).Nanoseconds())
 
-		var reply dns.Msg
-		err = reply.Unpack((*bufPtr)[:n])
+		// We only need to know whether the reply carried any answer record — that
+		// is the ANCOUNT field at bytes 6-7 of the header. Read it directly rather
+		// than a full Unpack, which would allocate the entire RR set on every
+		// packet just to be discarded.
+		hasAnswer := n >= headerLen && binary.BigEndian.Uint16((*bufPtr)[6:8]) > 0
 		bufPool.Put(bufPtr)
-		if err != nil {
-			log.Println("recv dns msg err:", err)
-		}
 
-		if len(reply.Answer) > 0 {
+		if hasAnswer {
 			localAns++
 		} else {
 			localNoAns++
@@ -154,6 +160,37 @@ func drainUDPReplies(conn *net.UDPConn, t1 time.Time, expected uint64) {
 		}
 	}
 	flush()
+}
+
+// sendUDPBatched sends totalRequest pre-packed queries on conn, cycling through
+// prePacked and rate-limited by limiter. Each group of up to MaxBatch packets is
+// handed to a batchSender: on Linux that is one sendmmsg syscall, elsewhere a
+// per-packet write fallback. When sendDriven is true it fires SignalDone once all
+// sends are counted (the -ignore / fake case, where no reply path runs).
+func sendUDPBatched(ctx context.Context, conn *net.UDPConn, limiter *rate.Limiter, prePacked [][]byte, totalRequest int, t1 time.Time, expected uint64, sendDriven bool) {
+	const batchSize = MaxBatch
+	domainCount := len(prePacked)
+	sender := newBatchSender(conn)
+	batch := make([][]byte, 0, batchSize)
+
+	for i := 0; i < totalRequest; i += batchSize {
+		count := batchSize
+		if i+count > totalRequest {
+			count = totalRequest - i
+		}
+
+		batch = batch[:0]
+		for j := 0; j < count; j++ {
+			batch = append(batch, prePacked[(i+j)%domainCount])
+		}
+		sender.send(batch)
+
+		Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
+		if Result.SendCount.Add(uint64(count)) >= expected && sendDriven {
+			SignalDone()
+		}
+		limiter.WaitN(ctx, count)
+	}
 }
 
 // watchIdle blocks until the run completes (done is closed) or no new outcome

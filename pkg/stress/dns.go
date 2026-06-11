@@ -53,36 +53,7 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 			conn.SetWriteBuffer(32 * 1024 * 1024)
 			conn.SetReadBuffer(256 * 1024 * 1024)
 
-			go func() {
-				const batchSize = 100
-				var localSend uint64
-				for i := 0; i < b.TotalRequest; i += batchSize {
-					count := batchSize
-					if i+count > b.TotalRequest {
-						count = b.TotalRequest - i
-					}
-
-					for j := 0; j < count; j++ {
-						idx := (i + j) % domainCount
-						dnsPacket := prePacked[idx]
-
-						// Update Message ID to be unique per packet
-						// (Optional: for stress testing, sometimes it's okay to reuse ID,
-						// but better to have it unique for correct RTT/match tracking)
-						// dnsPacket[0], dnsPacket[1] = byte(id>>8), byte(id&0xff)
-
-						conn.Write(dnsPacket)
-						localSend++
-					}
-
-					Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
-					if Result.SendCount.Add(uint64(count)) >= expected && sendDriven {
-						SignalDone()
-					}
-
-					limiter.WaitN(ctx, count)
-				}
-			}()
+			go sendUDPBatched(ctx, conn, limiter, prePacked, b.TotalRequest, t1, expected, sendDriven)
 
 			if b.IgnoreResponse {
 				continue

@@ -54,25 +54,7 @@ func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP stri
 		conn.SetWriteBuffer(32 * 1024 * 1024)
 		conn.SetReadBuffer(256 * 1024 * 1024)
 
-		go func() {
-			const batchSize = 100
-			for i := 0; i < b.TotalRequest; i += batchSize {
-				count := batchSize
-				if i+count > b.TotalRequest {
-					count = b.TotalRequest - i
-				}
-
-				for j := 0; j < count; j++ {
-					idx := (i + j) % domainCount
-					dnsPacket := prePacked[idx]
-					conn.Write(dnsPacket)
-				}
-
-				Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
-				Result.SendCount.Add(uint64(count))
-				limiter.WaitN(ctx, count)
-			}
-		}()
+		go sendUDPBatched(ctx, conn, limiter, prePacked, b.TotalRequest, t1, expected, false)
 
 		go drainUDPReplies(conn, t1, expected)
 	}

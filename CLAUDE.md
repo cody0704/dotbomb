@@ -96,7 +96,9 @@ critical asymmetry:
   still publish its tallies and signal completion, otherwise the run stalls until the
   idle watchdog fires and falsely reports a timeout with zero recv counts. (This was a
   real regression — see `TestDNSCompletesOnSmallRun`.) When touching this, preserve
-  the size-or-time flush.
+  the size-or-time flush. To decide answered-vs-not it reads the header's ANCOUNT
+  (bytes 6-7) directly rather than `dns.Msg.Unpack` — full parse cost ~167ns and 7
+  allocs per packet, the header read is ~0 allocs (`BenchmarkRecvAncount`).
 - **DoT/DoH** issue synchronous request→response per query inside a worker loop that
   *does* terminate after `TotalRequest` iterations, so a guaranteed final flush after
   the loop publishes the last partial batch. They only need a size threshold.
@@ -122,8 +124,14 @@ add or raise a `batchSize` constant in a transport file, keep `MaxBatch` in sync
 Queries are packed once into `prePacked [][]byte` before the hot loop (`Pack()` is
 expensive). DNS has two send paths selected by `b.FakeIF`:
 
-- **Real socket**: `net.DialUDP` per worker with large read/write buffers; a separate
-  receive goroutine runs `drainUDPReplies`.
+- **Real socket**: `net.DialUDP` per worker with large read/write buffers; sends go
+  through `sendUDPBatched` (in `stress.go`), which groups up to `MaxBatch` packets per
+  `batchSender.send` (`udpsend.go`). `batchSender` uses `x/net/ipv4.WriteBatch` — no
+  build tags: on Linux that is one `sendmmsg` syscall per batch, and on other platforms
+  WriteBatch documents that it "writes only a single message", so the loop advances by
+  the returned count and ends up sending one packet per iteration. A WriteBatch error
+  falls back to plain `conn.Write` for the remainder. A separate receive goroutine runs
+  `drainUDPReplies`.
 - **Fake source** (`-finet`): each worker owns a pcap handle and serializes spoofed
   Ethernet+IPv4+UDP frames, rotating the source IP via `startingFakeIP`/`nextIPv4`
   (byte 2 offset by workerID to avoid worker collisions). No replies are read; the run
