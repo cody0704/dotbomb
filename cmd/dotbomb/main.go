@@ -18,6 +18,8 @@ import (
 )
 
 func main() {
+	parseFlags()
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
@@ -68,10 +70,19 @@ func main() {
 		log.Fatal(domainFile, " does not have any domains")
 	}
 
+	// statusN is how many protocol goroutines tally into the singleton Result:
+	// 4 for -m all (DNS+DNSSEC+DoT+DoH), 1 otherwise.
+	statusN := 1
+	if mode == "all" {
+		statusN = 4
+	}
+
 	log.Println("DoTBomb start stress...")
 	log.Printf("Timeout: %ds", timeout)
-
-	log.Println("total request:", concurrency*totalRequest)
+	if duration > 0 {
+		log.Printf("Duration: %s at %d tps", duration, interval)
+	}
+	log.Println("total request:", statusN*concurrency*totalRequest)
 
 	t1 := time.Now() // get current time
 
@@ -84,10 +95,6 @@ func main() {
 	// Expected 是 recv 端要累積的「成果數」(Ans/NoAns/Timeout/Other 加總),
 	// 同時也是 SignalDone 的觸發門檻. 單 mode = C*T; -m all 因為四個 protocol
 	// 都把計數寫進同一個 singleton Result, 所以 Expected = 4*C*T.
-	statusN := 1
-	if mode == "all" {
-		statusN = 4
-	}
 	bomb.Expected = uint64(statusN * concurrency * totalRequest)
 
 	switch mode {

@@ -40,6 +40,7 @@ go test -bench . ./pkg/stress/                                 # benchmarks only
 -f         domain list file (required)
 -c         number of concurrent workers per mode
 -n         queries per worker
+-timeout   total run length (e.g. 30s, 5m, 1h); requires -tps, overrides -n
 -t         per-query timeout (seconds)
 -tps       global send rate limit (queries per second across all workers)
 -inflight  in-flight queries per DoT/DoH worker (default 1; lifts per-worker throughput cap)
@@ -55,6 +56,20 @@ go test -bench . ./pkg/stress/                                 # benchmarks only
 ```
 
 `-m all` ignores `-p` and uses standard ports (53, 53, 853, 443). `-c` is per-protocol — total queries = `4 × c × n`.
+
+### Run for a duration instead of a fixed count
+
+`-timeout` sets how long to stress instead of how many queries to send (it is the
+total run length, not the per-query `-t`). The total query count is derived as
+`tps × duration` (so `-tps` is required) and split across the workers, which means a
+rate-limited run lasts about `-timeout`. `-timeout` overrides `-n`.
+
+```bash
+# Hammer 8.8.8.8 at 5000 q/s for 10 minutes
+$ dotbomb -m dns -c 8 -timeout 10m -tps 5000 -t 2 -r 8.8.8.8 -f domains.txt
+Duration: 10m0s at 5000 tps
+total request: 3000000
+```
 
 ## Domain list format
 

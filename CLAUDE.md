@@ -46,9 +46,14 @@ needs libpcap headers present.
 
 ### Layout
 
-- `cmd/dotbomb/flag.go` — CLI flag parsing, validation, and default-port selection.
-  All input validation lives here (mode whitelist, fake-mode MAC auto-fill from the
-  interface, `-ignore` only with `-m dns`).
+- `cmd/dotbomb/flag.go` — CLI flag parsing, validation, and default-port selection,
+  exposed as `parseFlags()` (called from `main`, not `init()`, so test binaries don't
+  trip `flag.Parse` on their own `-test.*` flags). All input validation lives here
+  (mode whitelist, fake-mode MAC auto-fill from the interface, `-ignore` only with
+  `-m dns`). Duration mode (`-timeout 5m`, distinct from the per-query `-t`) is sugar:
+  `queriesPerWorker` derives `-n` from `tps × duration ÷ (protocols × c)`, so the
+  normal count-based run lasts ~`-timeout`; it requires `-tps` (the count can't be
+  derived otherwise) and overrides `-n`.
 - `cmd/dotbomb/main.go` — orchestration: loads/validates the domain list, builds the
   rate limiter, computes `Expected`, launches one goroutine per transport, collects
   statuses, and prints the report.

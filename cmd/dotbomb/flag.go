@@ -3,8 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"net"
 	"os"
+	"time"
 )
 
 var (
@@ -22,6 +24,7 @@ var (
 	interval       int
 	inflight       int
 	ignoreResponse bool
+	duration       time.Duration
 
 	// Fake
 	fakeIF        string
@@ -30,7 +33,10 @@ var (
 	fakeTargetMac string
 )
 
-func init() {
+// parseFlags parses and validates CLI flags into the package-level vars. It is
+// called at the start of main rather than from init() so that test binaries
+// (which inject their own -test.* flags) don't trip flag.Parse during init.
+func parseFlags() {
 	flag.BoolVar(&version, "v", false, "number of concurrency")
 	flag.StringVar(&mode, "m", "dot", "dot / doh / dns / dnssec / all")
 	flag.IntVar(&timeout, "t", 1, "request Timeout")
@@ -40,6 +46,7 @@ func init() {
 	flag.IntVar(&requestPort, "p", 0, "dns port")
 	flag.StringVar(&domainFile, "f", "", "domain list file")
 	flag.IntVar(&interval, "tps", 30, "Packet send tps")
+	flag.DurationVar(&duration, "timeout", 0, "total run length like 30s / 5m / 1h (requires -tps; overrides -n; not the per-query -t)")
 	flag.IntVar(&inflight, "inflight", 1, "in-flight queries per DoT/DoH worker (1 = current sequential behavior)")
 	flag.BoolVar(&ignoreResponse, "ignore", false, "ignore DNS query response (dns only); for tapped/mirrored traffic where no reply will arrive")
 
@@ -92,6 +99,7 @@ func init() {
 		fmt.Println("-c [Concurrency] <Number>")
 		fmt.Println("-t [Timeout] <Second>")
 		fmt.Println("-n [request] <Number>")
+		fmt.Println("-timeout [Run length] like 30s / 5m / 1h (requires -tps; overrides -n)")
 		fmt.Println("-r <Server IP>")
 		fmt.Println("-p <Port: DoT 853 / DoH 443 / DNS 53>")
 		fmt.Println("-f <DomainList File Path>")
@@ -122,4 +130,47 @@ func init() {
 		}
 	}
 	// -m all 跨四協定, 每個用各自的標準 port (53/53/853/443); 忽略 -p.
+
+	// -timeout mode: run for a wall-clock time instead of a fixed query count.
+	// Total queries = tps × seconds, so -tps must be set explicitly; we then
+	// derive per-worker -n from it and let the existing count-based completion
+	// path stop the run once they're all sent (which, rate-limited, takes ~-timeout).
+	if duration > 0 {
+		if !flagSet("tps") {
+			fmt.Println("-timeout requires -tps so the total query count can be derived")
+			os.Exit(0)
+		}
+		if interval <= 0 || concurrency <= 0 {
+			fmt.Println("-timeout needs a positive -tps and -c >= 1")
+			os.Exit(0)
+		}
+
+		// -m all fans out across 4 protocols that share the one global tps limit,
+		// so each protocol gets a quarter of the total queries.
+		protocols := 1
+		if mode == "all" {
+			protocols = 4
+		}
+		totalRequest = queriesPerWorker(interval, duration, protocols, concurrency)
+	}
+}
+
+// queriesPerWorker derives the per-worker -n for duration mode: the total query
+// count (tps × seconds) split across protocols × concurrency workers, rounded up,
+// and never below 1. Rate-limited at tps, sending that many queries takes ~d.
+func queriesPerWorker(tps int, d time.Duration, protocols, concurrency int) int {
+	total := float64(tps) * d.Seconds()
+	return max(1, int(math.Ceil(total/float64(protocols*concurrency))))
+}
+
+// flagSet reports whether the named flag was explicitly provided on the command
+// line (as opposed to sitting at its default).
+func flagSet(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
