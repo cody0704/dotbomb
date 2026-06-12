@@ -6,6 +6,7 @@ require (
 	github.com/folbricht/routedns v0.1.159
 	github.com/gopacket/gopacket v1.5.0
 	github.com/miekg/dns v1.1.72
+	golang.org/x/net v0.48.0
 	golang.org/x/time v0.15.0
 )
 
@@ -34,7 +35,6 @@ require (
 	github.com/yuin/gopher-lua v1.1.2-0.20241109074121-ccacf662c9d2 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/mod v0.31.0 // indirect
-	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect

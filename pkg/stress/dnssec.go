@@ -12,9 +12,6 @@ import (
 )
 
 func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP string, requestPort int) {
-	var timeout *time.Timer = time.NewTimer(b.LastTimeout)
-	defer timeout.Stop()
-
 	var domainCount = len(b.Domains)
 	expected := b.Expected
 
@@ -57,81 +54,14 @@ func (b *Bomb) DNSSEC(ctx context.Context, limiter *rate.Limiter, requestIP stri
 		conn.SetWriteBuffer(32 * 1024 * 1024)
 		conn.SetReadBuffer(256 * 1024 * 1024)
 
-		go func() {
-			const batchSize = 100
-			for i := 0; i < b.TotalRequest; i += batchSize {
-				count := batchSize
-				if i+count > b.TotalRequest {
-					count = b.TotalRequest - i
-				}
+		go sendUDPBatched(ctx, conn, limiter, prePacked, b.TotalRequest, t1, expected, false)
 
-				for j := 0; j < count; j++ {
-					idx := (i + j) % domainCount
-					dnsPacket := prePacked[idx]
-					conn.Write(dnsPacket)
-				}
-
-				Result.SendLastTime.Store(time.Since(t1).Nanoseconds())
-				Result.SendCount.Add(uint64(count))
-				limiter.WaitN(ctx, count)
-			}
-		}()
-
-		go func(conn *net.UDPConn) {
-			const flushThreshold = 500
-			var localAns, localNoAns, localProcessed uint64
-			lastReset := time.Now()
-
-			for {
-				bufPtr := bufPool.Get().(*[]byte)
-				incoming := *bufPtr
-
-				n, err := conn.Read(incoming)
-				if err != nil {
-					bufPool.Put(bufPtr)
-					log.Println("recv dns err", err)
-					Result.StopSockCount.Add(1)
-					break
-				}
-				Result.RecvLastTime.Store(time.Since(t1).Nanoseconds())
-
-				var dnsReply dns.Msg
-				err = dnsReply.Unpack(incoming[:n])
-				bufPool.Put(bufPtr)
-
-				if err != nil {
-					log.Println("recv dns msg err", err)
-				}
-
-				if len(dnsReply.Answer) > 0 {
-					localAns++
-				} else {
-					localNoAns++
-				}
-				localProcessed++
-
-				if localProcessed >= flushThreshold {
-					Result.RecvAnsCount.Add(localAns)
-					Result.RecvNoAnsCount.Add(localNoAns)
-					Result.MaybeSignalDone(expected)
-					localAns, localNoAns, localProcessed = 0, 0, 0
-
-					if time.Since(lastReset) > 100*time.Millisecond {
-						timeout.Reset(b.LastTimeout)
-						lastReset = time.Now()
-					}
-				}
-			}
-			Result.RecvAnsCount.Add(localAns)
-			Result.RecvNoAnsCount.Add(localNoAns)
-			Result.MaybeSignalDone(expected)
-		}(conn)
+		go drainUDPReplies(conn, t1, expected)
 	}
 
-	select {
-	case <-DoneChan:
-		StatusChan <- 0
-	case <-timeout.C:
+	if watchIdle(DoneChan, b.LastTimeout) {
 		StatusChan <- 1
+	} else {
+		StatusChan <- 0
 	}
 }
