@@ -13,7 +13,7 @@ windows:
 	cd ./bin && zip $(NAME)_$(VERSION)_windows-amd64.zip $(NAME).exe
 	rm -rf ./bin/$(NAME).exe
 
-drawin:
+mac:
 	echo "Compiling for macOS"
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -o ./bin/$(NAME) -ldflags '-X "main.versionID=$(VERSION)"' ./cmd/dotbomb
 	cd ./bin && zip $(NAME)_$(VERSION)_darwin-amd64.zip $(NAME)
