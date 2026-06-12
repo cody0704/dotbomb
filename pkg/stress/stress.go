@@ -164,12 +164,15 @@ func drainUDPReplies(conn *net.UDPConn, t1 time.Time, expected uint64) {
 }
 
 // sendUDPBatched sends totalRequest pre-packed queries on conn, cycling through
-// prePacked and rate-limited by limiter. Each group of up to MaxBatch packets is
+// prePacked and rate-limited by limiter. The batch size is limiter.Burst() so each
+// WaitN(count) request never exceeds the burst (which would make the limiter return
+// an error and bypass the limit). Pacing happens before the send so completion in
+// send-driven mode reflects the rate-limited timeline (see -timeout). Each batch is
 // handed to a batchSender: on Linux that is one sendmmsg syscall, elsewhere a
 // per-packet write fallback. When sendDriven is true it fires SignalDone once all
 // sends are counted (the -ignore / fake case, where no reply path runs).
 func sendUDPBatched(ctx context.Context, conn *net.UDPConn, limiter *rate.Limiter, prePacked [][]byte, totalRequest int, t1 time.Time, expected uint64, sendDriven bool) {
-	const batchSize = MaxBatch
+	batchSize := limiter.Burst()
 	domainCount := len(prePacked)
 	sender := newBatchSender(conn)
 	batch := make([][]byte, 0, batchSize)
@@ -179,6 +182,7 @@ func sendUDPBatched(ctx context.Context, conn *net.UDPConn, limiter *rate.Limite
 		if i+count > totalRequest {
 			count = totalRequest - i
 		}
+		limiter.WaitN(ctx, count) // pace before sending
 
 		batch = batch[:0]
 		for j := 0; j < count; j++ {
@@ -190,7 +194,6 @@ func sendUDPBatched(ctx context.Context, conn *net.UDPConn, limiter *rate.Limite
 		if Result.SendCount.Add(uint64(count)) >= expected && sendDriven {
 			SignalDone()
 		}
-		limiter.WaitN(ctx, count)
 	}
 }
 

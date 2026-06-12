@@ -115,11 +115,17 @@ a data race when many receivers reset one shared timer. Send-driven modes
 
 ### Rate limiting
 
-A single `golang.org/x/time/rate.Limiter` is shared across all workers. Its **burst**
-must be `>= stress.MaxBatch` (the largest `n` any transport passes to `WaitN`),
-because `WaitN(n)` returns immediately with an error when `n > burst`, silently
-bypassing the limit. `main` sets burst to `max(stress.MaxBatch, concurrency)`. If you
-add or raise a `batchSize` constant in a transport file, keep `MaxBatch` in sync.
+A single `golang.org/x/time/rate.Limiter` is shared across all workers. `main` sets
+its **burst** to `min(stress.MaxBatch, max(1, tps))` — it tracks `tps` (capped at
+`MaxBatch`, floored at 1) rather than being a flat 100. This matters: the burst is the
+size of the initial token bucket, so a burst larger than the whole run lets every
+query drain instantly and the rate limit never engages (a flat-100 burst made
+`-timeout 10s -tps 3` finish in 0.2s instead of 10s). Every transport uses
+`limiter.Burst()` as its send batch size and calls `WaitN(batch)` **before** sending,
+so the request never exceeds the burst (which would make `WaitN` error and silently
+bypass the limit) and send-driven completion reflects the paced timeline. `MaxBatch`
+is now just the cap on burst/batch size; keep any per-transport wait sized by
+`limiter.Burst()`, not a hardcoded constant.
 
 ### Send paths
 

@@ -101,12 +101,13 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 				srcIP := startingFakeIP(b.FakeIP, workerID)
 				scratch := make([]byte, fakeMaxLen)
 
-				const batchSize = MaxBatch
+				batchSize := limiter.Burst()
 				for i := 0; i < b.TotalRequest; i += batchSize {
 					count := batchSize
 					if i+count > b.TotalRequest {
 						count = b.TotalRequest - i
 					}
+					limiter.WaitN(ctx, count) // pace before sending
 
 					for j := 0; j < count; j++ {
 						curr := i + j
@@ -131,8 +132,6 @@ func (b *Bomb) DNS(ctx context.Context, limiter *rate.Limiter, requestIP string,
 					if Result.SendCount.Add(uint64(count)) >= expected {
 						SignalDone()
 					}
-
-					limiter.WaitN(ctx, count)
 				}
 			}(workerID)
 		}

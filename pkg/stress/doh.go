@@ -45,7 +45,7 @@ func (b *Bomb) DoH(ctx context.Context, limiter *rate.Limiter, server string) {
 				wg.Add(1)
 				go func(slot int) {
 					defer wg.Done()
-					const batchSize = 10
+					batchSize := limiter.Burst()
 					const flushThreshold = 100
 					var localAns, localNoAns, localTimeout, localOther, localProcessed uint64
 

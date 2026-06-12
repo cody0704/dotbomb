@@ -86,11 +86,12 @@ func main() {
 
 	t1 := time.Now() // get current time
 
-	// TPS 限制. burst 必須 >= stress.MaxBatch, 否則 sender 的 WaitN(batchSize) 在
-	// n > burst 時立刻回 error, rate limit 整個失效 (TPS 會衝到網卡上限). 同時 >=
-	// concurrency 讓多個 worker 不會擠在 limiter 的 mutex 上. 平均速率仍由 rate.Limit 決定.
+	// TPS 限制. burst 跟著 tps 走 (上限 stress.MaxBatch, 下限 1): burst 太大會讓
+	// 低 tps 的 run 把整批額度一次用光、瞬間打完 (例如 -timeout 10s -tps 3 只跑 0.2s);
+	// 各 transport 以 limiter.Burst() 當送出批量, 確保 WaitN(batch) 不會超過 burst
+	// 而被 rate limiter 直接放行. 平均速率仍由 rate.Limit 決定.
 	var ctx = context.Background()
-	limiter := rate.NewLimiter(rate.Limit(interval), max(stress.MaxBatch, concurrency))
+	limiter := rate.NewLimiter(rate.Limit(interval), min(stress.MaxBatch, max(1, interval)))
 
 	// Expected 是 recv 端要累積的「成果數」(Ans/NoAns/Timeout/Other 加總),
 	// 同時也是 SignalDone 的觸發門檻. 單 mode = C*T; -m all 因為四個 protocol
